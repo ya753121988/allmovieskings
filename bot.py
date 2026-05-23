@@ -9,7 +9,7 @@ app = Flask(__name__)
 app.secret_key = "super_secure_key_99"
 
 # --- কনফিগারেশন (আপনার তথ্য দিন) ---
-MONGO_URI = "mongodb+srv://Demo270:Demo270@cluster0.ls1igsg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+MONGO_URI = "mongodb+srv://drama:drama@cluster0.sa4kvgu.mongodb.net/DramaStoreDB?retryWrites=true&w=majority&appName=Cluster0"
 TMDB_API_KEY = "7dc544d9253bccc3cfecc1c677f69819"
 
 client = MongoClient(MONGO_URI)
