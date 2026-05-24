@@ -12,7 +12,7 @@ MONGO_URI = "mongodb+srv://drama:drama@cluster0.sa4kvgu.mongodb.net/DramaStoreDB
 TMDB_API_KEY = "7dc544d9253bccc3cfecc1c677f69819"
 
 client = MongoClient(MONGO_URI)
-db = client['DramaStoreDB']
+db = client['DramaStoreB']
 contents_col = db['contents']
 settings_col = db['site_settings']
 cat_col = db['categories']
