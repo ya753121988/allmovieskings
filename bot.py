@@ -91,7 +91,6 @@ def admin_dashboard():
     conf = settings_col.find_one({"id": "config"})
     cats = list(cat_col.find())
     stats = {"total": contents_col.count_documents({}), "movie": contents_col.count_documents({"type":"movie"}), "tv": contents_col.count_documents({"type":"tv"})}
-    # এডিট করার জন্য ডাটা নিয়ে আসা
     edit_item = None
     eid = request.args.get('edit')
     if eid: edit_item = contents_col.find_one({"_id": ObjectId(eid)})
@@ -106,7 +105,8 @@ def admin_save():
         "year": request.form.get('year'), "story": request.form.get('story'),
         "poster": request.form.get('poster'), "backdrop": request.form.get('backdrop'),
         "logo": request.form.get('logo'), "type": request.form.get('type'),
-        "category": request.form.getlist('cats')
+        "category": request.form.getlist('cats'),
+        "images": request.form.get('images', '').split(',')
     }
     if cid:
         contents_col.update_one({"_id": ObjectId(cid)}, {"$set": data})
@@ -174,9 +174,19 @@ def manage_series(id):
         action = request.form.get('action')
         sn = request.form.get('sn')
         if action == 'add_ep':
+            qualities = request.form.getlist('q[]')
+            tg_links = request.form.getlist('tg[]')
+            d_links = request.form.getlist('d[]')
+            
+            links_list = []
+            for i in range(len(qualities)):
+                if qualities[i]:
+                    links_list.append({"q": qualities[i], "tg": tg_links[i], "d": d_links[i]})
+
             ep = {
-                "id": str(ObjectId()), "en": request.form.get('en'),
-                "links": [{"q": x.split('|')[0], "tg": x.split('|')[1], "d": x.split('|')[2]} for x in request.form.get('links').split(',') if '|' in x]
+                "id": str(ObjectId()), 
+                "en": request.form.get('en'),
+                "links": links_list
             }
             res = contents_col.update_one({"_id": ObjectId(id), "seasons.sn": sn}, {"$push": {"seasons.$.eps": ep}})
             if res.matched_count == 0:
@@ -215,14 +225,20 @@ def api_tmdb_info():
     url = f"https://api.themoviedb.org/3/{t}/{tid}?api_key={TMDB_API_KEY}&append_to_response=images"
     res = requests.get(url).json()
     logos = res.get('images', {}).get('logos', [])
+    backdrops = res.get('images', {}).get('backdrops', [])
+    posters = res.get('images', {}).get('posters', [])
+    
+    gallery = []
+    for b in backdrops[:10]: gallery.append(f"https://image.tmdb.org/t/p/original{b['file_path']}")
+    for p in posters[:10]: gallery.append(f"https://image.tmdb.org/t/p/original{p['file_path']}")
+    
     logo = f"https://image.tmdb.org/t/p/original{logos[0]['file_path']}" if logos else ""
-    return jsonify({"data": res, "logo": logo})
+    return jsonify({"data": res, "logo": logo, "gallery": ",".join(gallery)})
 
 # --------------------------------------------------------------------------------------
-# HTML TEMPLATES (RE-BUILT FOR ALL FEATURES)
+# HTML TEMPLATES
 # --------------------------------------------------------------------------------------
 
-# --- SHARED SIDEBAR COMPONENT ---
 SIDEBAR_HTML = """
 <div id="adminSidebar" class="p-6">
     <div class="flex justify-between items-center mb-10">
@@ -254,12 +270,6 @@ ADMIN_DASHBOARD_HTML = """
     </div>
     """ + SIDEBAR_HTML + """
     <div class="flex-1 p-4 md:p-10 space-y-8">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <div class="glass p-6 rounded-3xl text-center"><p class="text-xs text-gray-500">Total Items</p><h3 class="text-4xl font-black text-red-600">{{ stats.total }}</h3></div>
-            <div class="glass p-6 rounded-3xl text-center"><p class="text-xs text-gray-500">Movies</p><h3 class="text-4xl font-black">{{ stats.movie }}</h3></div>
-            <div class="glass p-6 rounded-3xl text-center"><p class="text-xs text-gray-500">TV Series</p><h3 class="text-4xl font-black">{{ stats.tv }}</h3></div>
-        </div>
-
         <div class="glass p-6 md:p-8 rounded-[40px] border-red-600/10">
             <h3 class="text-xl font-black mb-6 text-red-600 italic uppercase">Auto Fetch (TMDB)</h3>
             <div class="flex flex-col sm:flex-row gap-4">
@@ -273,6 +283,7 @@ ADMIN_DASHBOARD_HTML = """
         <form action="/admin/save" method="POST" class="glass p-6 md:p-8 rounded-[40px] grid grid-cols-1 lg:grid-cols-2 gap-8">
             <input type="hidden" name="cid" value="{{ edit._id if edit else '' }}">
             <input type="hidden" name="type" id="f_type" value="{{ edit.type if edit else 'movie' }}">
+            <input type="hidden" name="images" id="f_gallery" value="{{ ','.join(edit.images) if edit and edit.images else '' }}">
             <div>
                 <label class="text-[10px] uppercase font-bold text-gray-500 ml-2">Title</label>
                 <input name="title" id="f_title" value="{{ edit.title if edit else '' }}" class="input-field mb-4" required>
@@ -314,6 +325,7 @@ ADMIN_DASHBOARD_HTML = """
             document.getElementById('f_poster').value = 'https://image.tmdb.org/t/p/w500' + d.poster_path;
             document.getElementById('f_backdrop').value = 'https://image.tmdb.org/t/p/original' + d.backdrop_path;
             document.getElementById('f_logo').value = j.logo;
+            document.getElementById('f_gallery').value = j.gallery;
             document.getElementById('f_story').value = d.overview;
             document.getElementById('f_type').value = type;
             alert("Data Loaded!");
@@ -341,7 +353,6 @@ ADMIN_MANAGE_HTML = """
                 <button><i class="fa fa-search"></i></button>
             </form>
         </div>
-
         <form action="/admin/bulk_delete" method="POST">
             <div class="flex gap-4 mb-6">
                 <label class="flex items-center gap-2 cursor-pointer bg-gray-800 px-4 py-2 rounded-xl text-xs">
@@ -349,7 +360,6 @@ ADMIN_MANAGE_HTML = """
                 </label>
                 <button type="submit" class="bg-red-900 px-6 py-2 rounded-xl text-xs font-bold uppercase" onclick="return confirm('Delete selected?')">Bulk Kill</button>
             </div>
-
             <div class="grid gap-4">
                 {% for m in items %}
                 <div class="glass p-4 rounded-3xl flex items-center justify-between gap-4">
@@ -375,12 +385,7 @@ ADMIN_MANAGE_HTML = """
             </div>
         </form>
     </div>
-    <script>
-        function toggleSelectAll(source) {
-            checkboxes = document.getElementsByClassName('item-checkbox');
-            for(var i in checkboxes) checkboxes[i].checked = source.checked;
-        }
-    </script>
+    <script>function toggleSelectAll(source) { checkboxes = document.getElementsByClassName('item-checkbox'); for(var i in checkboxes) checkboxes[i].checked = source.checked; }</script>
 </body>
 </html>
 """
@@ -427,18 +432,9 @@ ADMIN_SETTINGS_HTML = """
     <div class="flex-1 p-6 md:p-12 max-w-4xl">
         <h2 class="text-2xl font-black italic mb-10">SITE CONFIGURATION</h2>
         <form method="POST" class="glass p-8 rounded-[40px] space-y-6">
-            <div>
-                <label class="text-xs uppercase text-gray-500 font-bold block mb-2">Site Name</label>
-                <input name="site_name" value="{{ conf.site_name }}" class="input-field">
-            </div>
-            <div>
-                <label class="text-xs uppercase text-gray-500 font-bold block mb-2">Site Logo URL</label>
-                <input name="site_logo" value="{{ conf.site_logo }}" class="input-field">
-            </div>
-            <div>
-                <label class="text-xs uppercase text-gray-500 font-bold block mb-2">Header Notice</label>
-                <textarea name="header_notice" class="input-field h-24">{{ conf.header_notice }}</textarea>
-            </div>
+            <div><label class="text-xs uppercase text-gray-500 font-bold block mb-2">Site Name</label><input name="site_name" value="{{ conf.site_name }}" class="input-field"></div>
+            <div><label class="text-xs uppercase text-gray-500 font-bold block mb-2">Site Logo URL</label><input name="site_logo" value="{{ conf.site_logo }}" class="input-field"></div>
+            <div><label class="text-xs uppercase text-gray-500 font-bold block mb-2">Header Notice</label><textarea name="header_notice" class="input-field h-24">{{ conf.header_notice }}</textarea></div>
             <div class="grid grid-cols-2 gap-4">
                 <div><label class="text-xs text-gray-500">Admin User</label><input name="admin_user" value="{{ conf.admin_user }}" class="input-field"></div>
                 <div><label class="text-xs text-gray-500">Admin Pass</label><input name="admin_pass" value="{{ conf.admin_pass }}" class="input-field"></div>
@@ -450,7 +446,6 @@ ADMIN_SETTINGS_HTML = """
 </html>
 """
 
-# Rest of the templates (LINKS, SERIES, USER SITE) follow the same logic...
 ADMIN_LINKS_HTML = """
 <!DOCTYPE html>
 <html>
@@ -482,7 +477,7 @@ ADMIN_LINKS_HTML = """
 ADMIN_SERIES_HTML = """
 <!DOCTYPE html>
 <html>
-<head>{{ ui|safe }}<title>Web Series Hub</title></head>
+<head>{{ ui|safe }}<title>Series Manager</title></head>
 <body class="p-4 md:p-10">
     <div class="max-w-5xl mx-auto glass p-6 md:p-10 rounded-[50px]">
         <div class="flex justify-between items-center mb-10">
@@ -490,24 +485,35 @@ ADMIN_SERIES_HTML = """
             <a href="/admin/manage" class="btn-red text-xs">Back</a>
         </div>
 
-        <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-12 bg-white/5 p-6 rounded-3xl">
+        <form method="POST" class="bg-white/5 p-6 rounded-3xl mb-12">
             <input type="hidden" name="action" value="add_ep">
-            <input name="sn" placeholder="Season No (e.g. 1)" class="input-field" required>
-            <input name="en" placeholder="Episode No" class="input-field" required>
-            <textarea name="links" placeholder="Quality|TG|Direct" class="input-field md:col-span-2 h-14" required></textarea>
-            <button class="btn-red md:col-span-4 uppercase">Add / Update Episode</button>
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <input name="sn" placeholder="Season No (e.g. 1)" class="input-field" required>
+                <input name="en" placeholder="Episode No" class="input-field" required>
+            </div>
+            
+            <div id="quality_inputs" class="space-y-4">
+                <div class="grid grid-cols-3 gap-2 bg-black/20 p-4 rounded-xl border border-gray-800">
+                    <input name="q[]" placeholder="Quality (e.g. 720p)" class="input-field text-xs">
+                    <input name="tg[]" placeholder="Telegram Link" class="input-field text-xs">
+                    <input name="d[]" placeholder="Direct Download Link" class="input-field text-xs">
+                </div>
+            </div>
+            
+            <button type="button" onclick="addMoreQuality()" class="mt-4 text-xs text-blue-400 font-bold uppercase">+ Add More Quality</button>
+            <button class="w-full btn-red mt-8 uppercase font-black">Save Episode</button>
         </form>
 
         {% for s in m.seasons %}
         <div class="mb-10 bg-black/30 p-6 rounded-[30px] border border-gray-900">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-xl font-black text-red-600 italic">Season {{ s.sn }}</h3>
-                <form method="POST"><input type="hidden" name="action" value="del_season"><input type="hidden" name="sn" value="{{ s.sn }}"><button class="text-red-900 text-xs uppercase font-bold" onclick="return confirm('Delete whole season?')">Delete Season</button></form>
+                <form method="POST"><input type="hidden" name="action" value="del_season"><input type="hidden" name="sn" value="{{ s.sn }}"><button class="text-red-900 text-xs font-bold uppercase">Delete Season</button></form>
             </div>
             <div class="grid gap-4">
                 {% for ep in s.eps %}
-                <div class="glass p-4 rounded-2xl flex justify-between items-center border-l-4 border-indigo-600">
-                    <div class="font-black text-xs uppercase tracking-widest">Episode {{ ep.en }}</div>
+                <div class="glass p-4 rounded-2xl flex justify-between items-center">
+                    <div class="font-black text-xs uppercase">Episode {{ ep.en }} ({{ ep.links|length }} Links)</div>
                     <form method="POST"><input type="hidden" name="action" value="del_ep"><input type="hidden" name="sn" value="{{ s.sn }}"><input type="hidden" name="eid" value="{{ ep.id }}"><button class="text-red-900"><i class="fa fa-trash"></i></button></form>
                 </div>
                 {% endfor %}
@@ -515,6 +521,16 @@ ADMIN_SERIES_HTML = """
         </div>
         {% endfor %}
     </div>
+    <script>
+        function addMoreQuality(){
+            const div = document.createElement('div');
+            div.className = "grid grid-cols-3 gap-2 bg-black/20 p-4 rounded-xl border border-gray-800 mt-2";
+            div.innerHTML = `<input name="q[]" placeholder="Quality" class="input-field text-xs">
+                             <input name="tg[]" placeholder="Telegram Link" class="input-field text-xs">
+                             <input name="d[]" placeholder="Direct Link" class="input-field text-xs">`;
+            document.getElementById('quality_inputs').appendChild(div);
+        }
+    </script>
 </body>
 </html>
 """
@@ -540,8 +556,7 @@ USER_HOME_HTML = """
                 <a href="/"><i class="fa fa-home mr-3 text-red-600"></i> Home</a>
                 <div class="text-[10px] text-gray-600 uppercase font-black mt-4">Browse Categories</div>
                 {% for c in cats %}<a href="/?s={{ c.name }}" class="text-sm font-bold">{{ c.name }}</a>{% endfor %}
-                <hr class="border-gray-800">
-                <a href="/admin/login" class="text-xs text-gray-600">Admin Login</a>
+                <hr class="border-gray-800"><a href="/admin/login" class="text-xs text-gray-600">Admin Login</a>
             </div>
         </div>
     </div>
@@ -591,22 +606,21 @@ USER_DETAIL_HTML = """
             {% else %}<h1 class="text-5xl md:text-8xl font-black italic tracking-tighter uppercase mb-4">{{ m.title }}</h1>{% endif %}
             <div class="flex gap-4 text-xs font-black text-gray-400 items-center uppercase tracking-widest">
                 <span class="bg-red-600 text-white px-2 py-1 rounded">ULTRA HD</span>
-                <span>{{ m.year }}</span>
-                <span>{{ m.lang }}</span>
-                <span><i class="fa fa-eye"></i> {{ m.views }}</span>
+                <span>{{ m.year }}</span><span>{{ m.lang }}</span><span><i class="fa fa-eye"></i> {{ m.views }}</span>
             </div>
-            <p class="text-gray-300 text-sm md:text-lg max-w-4xl line-clamp-3 md:line-clamp-none italic mt-4">{{ m.story }}</p>
+            <p class="text-gray-300 text-sm md:text-lg max-w-4xl italic mt-4">{{ m.story }}</p>
         </div>
     </div>
+
     <div class="p-6 md:p-20">
         {% if m.type == 'movie' %}
             <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Watch Now</h3>
             <div class="grid gap-4 max-w-3xl">
                 {% for l in m.movie_links %}
                 <div class="glass p-5 rounded-2xl flex justify-between items-center">
-                    <span class="font-black text-red-600 italic tracking-widest">{{ l.q }}</span>
+                    <span class="font-black text-red-600 italic uppercase">{{ l.q }}</span>
                     <div class="flex gap-4">
-                        <a href="{{ l.tg }}" class="text-sky-500"><i class="fab fa-telegram text-2xl"></i></a>
+                        {% if l.tg %}<a href="{{ l.tg }}" class="text-sky-500"><i class="fab fa-telegram text-2xl"></i></a>{% endif %}
                         <a href="{{ l.d }}" class="bg-white text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase italic">Download</a>
                     </div>
                 </div>
@@ -621,15 +635,15 @@ USER_DETAIL_HTML = """
             {% for s in m.seasons %}
             <div class="s-content hidden grid gap-6" id="box-{{ s.sn }}">
                 {% for ep in s.eps %}
-                <div class="glass p-8 rounded-[40px]">
-                    <div class="font-black text-[10px] text-gray-500 uppercase mb-4 tracking-widest">Episode {{ ep.en }}</div>
+                <div class="glass p-6 rounded-[30px]">
+                    <div class="font-black text-[12px] text-gray-400 uppercase mb-4 tracking-widest">Episode {{ ep.en }}</div>
                     <div class="grid md:grid-cols-2 gap-4">
                         {% for l in ep.links %}
                         <div class="bg-gray-800/30 p-4 rounded-2xl flex justify-between items-center border border-white/5">
-                            <span class="text-red-500 font-black italic text-xs">{{ l.q }}</span>
-                            <div class="flex gap-4">
-                                <a href="{{ l.tg }}" class="text-sky-500"><i class="fab fa-telegram"></i></a>
-                                <a href="{{ l.d }}" class="bg-white text-black px-4 py-1 rounded-full text-[8px] font-black uppercase">Get Link</a>
+                            <span class="text-red-500 font-black italic text-sm">{{ l.q }}</span>
+                            <div class="flex gap-4 items-center">
+                                {% if l.tg %}<a href="{{ l.tg }}" class="text-sky-500 text-2xl" target="_blank"><i class="fab fa-telegram"></i></a>{% endif %}
+                                <a href="{{ l.d }}" class="bg-white text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase italic" target="_blank">Direct Link</a>
                             </div>
                         </div>
                         {% endfor %}
@@ -639,7 +653,19 @@ USER_DETAIL_HTML = """
             </div>
             {% endfor %}
         {% endif %}
+
+        {% if m.images %}
+        <div class="mt-20">
+            <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Gallery & Screenshots</h3>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                {% for img in m.images %}
+                <img src="{{ img }}" class="rounded-2xl border border-white/5 hover:scale-105 transition duration-300 cursor-pointer shadow-2xl">
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
+
     <script>
         function showS(n){
             document.querySelectorAll('.s-content').forEach(c => c.classList.add('hidden'));
