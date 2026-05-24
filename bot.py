@@ -5,7 +5,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 
 app = Flask(__name__)
-app.secret_key = "ULTIMATE_DRAMA_STORE_FIXED_FINAL_V3"
+app.secret_key = "ULTIMATE_DRAMA_STORE_FIXED_FINAL_V3_FIXED"
 
 # --- ডাটাবেজ এবং API কনফিগারেশন ---
 MONGO_URI = "mongodb+srv://drama:drama@cluster0.sa4kvgu.mongodb.net/DramaStoreDB?retryWrites=true&w=majority&appName=Cluster0"
@@ -17,17 +17,21 @@ contents_col = db['contents']
 settings_col = db['site_settings']
 cat_col = db['categories']
 
-# ডিফল্ট সেটিংস (নতুন ফিল্ড cat_display_limit সহ আপডেট করা হয়েছে)
-if not settings_col.find_one({"id": "config"}):
-    settings_col.insert_one({
-        "id": "config", "site_name": "DRAMA-FLIX", "site_logo": "https://i.ibb.co/logo.png",
-        "header_notice": "Welcome to Premium Drama Store", "admin_user": "admin", "admin_pass": "1234",
-        "movie_limit": 20, "series_limit": 20, "slider_limit": 10, "cat_display_limit": 10,
-        "ad_status": "off", "ad_timer": 5, "direct_ad_link": "",
-        "popunder_ad": "", "social_bar_ad": "", "header_ad": "", "footer_ad": "", "middle_ad": ""
-    })
+# ডিফল্ট সেটিংস চেক
+def get_config():
+    conf = settings_col.find_one({"id": "config"})
+    if not conf:
+        conf = {
+            "id": "config", "site_name": "DRAMA-FLIX", "site_logo": "https://i.ibb.co/logo.png",
+            "header_notice": "Welcome to Premium Drama Store", "admin_user": "admin", "admin_pass": "1234",
+            "movie_limit": 20, "series_limit": 20, "slider_limit": 10, "cat_display_limit": 10,
+            "ad_status": "off", "ad_timer": 5, "direct_ad_link": "",
+            "popunder_ad": "", "social_bar_ad": "", "header_ad": "", "footer_ad": "", "middle_ad": ""
+        }
+        settings_col.insert_one(conf)
+    return conf
 
-# --- UI HEAD ---
+# --- UI CSS ---
 UI_HEAD = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -52,6 +56,7 @@ UI_HEAD = """
     }
     .nav-link { display: flex; align-items: center; padding: 14px; border-radius: 12px; color: #94a3b8; margin-bottom: 5px; transition: 0.3s; }
     .nav-link:hover, .nav-link.active { background: var(--p); color: white; }
+
     #ad-timer-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:10000; flex-direction:column; align-items:center; justify-content:center; }
 </style>
 """
@@ -69,14 +74,13 @@ AD_JS = """
             const overlay = document.getElementById('ad-timer-overlay');
             overlay.style.display = 'flex';
             
-            // ডিরেক্ট অ্যাড লিঙ্কটি নতুন ট্যাবে ওপেন হবে
             window.open(adLink, '_blank');
 
             let count = timer;
             const btn = document.getElementById('timer-btn');
-            btn.className = "btn-red px-10 py-4 opacity-70 cursor-not-allowed";
+            btn.className = "btn-red px-10 py-4 opacity-50 cursor-not-allowed";
             const interval = setInterval(() => {
-                btn.innerText = "Please Wait " + count + "s";
+                btn.innerText = "Wait " + count + "s to unlock content";
                 count--;
                 if (count < 0) {
                     clearInterval(interval);
@@ -91,8 +95,8 @@ AD_JS = """
     }
 </script>
 <div id="ad-timer-overlay">
-    <div class="text-center p-10 glass rounded-[40px] border border-red-600/20">
-        <h2 class="text-2xl font-black mb-4 text-red-600 uppercase">Redirecting...</h2>
+    <div class="text-center p-10 glass rounded-[40px] border border-red-600/30">
+        <h2 class="text-2xl font-black mb-4 text-red-600 uppercase italic">Security Check...</h2>
         <button id="timer-btn" class="btn-red px-10 py-4">Waiting...</button>
     </div>
 </div>
@@ -104,31 +108,30 @@ AD_JS = """
 
 @app.route('/')
 def index():
-    conf = settings_col.find_one({"id": "config"})
+    conf = get_config()
     search = request.args.get('s', '')
     
-    # সার্চ করলে সব পোস্ট দেখাবে
     if search:
         items = list(contents_col.find({"title": {"$regex": search, "$options": "i"}}).sort("title", 1))
         return render_template_string(USER_HOME_HTML, ui=UI_HEAD, conf=conf, items=items, cats_data=[], slider=[], is_search=True, ad_js=AD_JS)
 
-    # স্লাইডার এবং ক্যাটাগরি ভিত্তিক ডাটা
     slider = list(contents_col.find().sort("views", -1).limit(int(conf.get('slider_limit', 10))))
     cats = list(cat_col.find())
     display_limit = int(conf.get('cat_display_limit', 10))
     
     cats_data = []
     for c in cats:
-        # টাইটেল অনুযায়ী A-Z সর্ট এবং এডমিন লিমিট অনুযায়ী পোস্ট
+        # A-Z sorting using .sort("title", 1)
         c_items = list(contents_col.find({"category": c['name']}).sort("title", 1).limit(display_limit))
         if c_items:
-            cats_data.append({"name": c['name'], "items": c_items})
+            # 'posts' নাম দেওয়া হয়েছে যাতে Jinja .items মেথডের সাথে কনফিউজড না হয়
+            cats_data.append({"name": c['name'], "posts": c_items})
             
     return render_template_string(USER_HOME_HTML, ui=UI_HEAD, conf=conf, cats_data=cats_data, slider=slider, is_search=False, ad_js=AD_JS)
 
 @app.route('/category/<name>')
 def category_view(name):
-    conf = settings_col.find_one({"id": "config"})
+    conf = get_config()
     items = list(contents_col.find({"category": name}).sort("title", 1))
     return render_template_string(USER_HOME_HTML, ui=UI_HEAD, conf=conf, items=items, cats_data=[], slider=[], is_search=True, cat_name=name, ad_js=AD_JS)
 
@@ -137,14 +140,15 @@ def view(id):
     item = contents_col.find_one({"_id": ObjectId(id)})
     if not item: return redirect('/')
     contents_col.update_one({"_id": ObjectId(id)}, {"$inc": {"views": 1}})
-    conf = settings_col.find_one({"id": "config"})
+    conf = get_config()
     return render_template_string(USER_DETAIL_HTML, ui=UI_HEAD, m=item, conf=conf, ad_js=AD_JS)
 
-# --- ADMIN AUTH ---
+# --- ADMIN ROUTES ---
+
 @app.route('/admin/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        c = settings_col.find_one({"id": "config"})
+        c = get_config()
         if request.form.get('u') == c['admin_user'] and request.form.get('p') == c['admin_pass']:
             session['admin'] = True; return redirect('/admin/dashboard')
     return render_template_string(ADMIN_LOGIN_HTML, ui=UI_HEAD)
@@ -152,7 +156,7 @@ def login():
 @app.route('/admin/dashboard')
 def admin_dashboard():
     if not session.get('admin'): return redirect('/admin/login')
-    conf = settings_col.find_one({"id": "config"})
+    conf = get_config()
     cats = list(cat_col.find())
     stats = {"total": contents_col.count_documents({}), "movie": contents_col.count_documents({"type":"movie"}), "tv": contents_col.count_documents({"type":"tv"})}
     edit_item = None
@@ -170,7 +174,7 @@ def admin_save():
         "poster": request.form.get('poster'), "backdrop": request.form.get('backdrop'),
         "logo": request.form.get('logo'), "type": request.form.get('type'),
         "category": request.form.getlist('cats'),
-        "images": request.form.get('images', '').split(',')
+        "images": [i.strip() for i in request.form.get('images', '').split(',') if i.strip()]
     }
     if cid:
         contents_col.update_one({"_id": ObjectId(cid)}, {"$set": data})
@@ -263,13 +267,12 @@ def admin_settings():
     if request.method == 'POST':
         settings_col.update_one({"id": "config"}, {"$set": request.form.to_dict()})
         return redirect('/admin/settings')
-    conf = settings_col.find_one({"id": "config"})
+    conf = get_config()
     return render_template_string(ADMIN_SETTINGS_HTML, ui=UI_HEAD, conf=conf)
 
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/')
 
-# --- TMDB HELPERS ---
 @app.route('/api/tmdb_search')
 def api_tmdb_search():
     q = request.args.get('q'); t = request.args.get('t', 'movie')
@@ -290,12 +293,14 @@ def api_tmdb_info():
     logo = f"https://image.tmdb.org/t/p/original{logos[0]['file_path']}" if logos else ""
     return jsonify({"data": res, "logo": logo, "gallery": ",".join(gallery)})
 
-# --- HTML TEMPLATES (আপনার ডিজাইন হুবহু রাখা হয়েছে) ---
+# --------------------------------------------------------------------------------------
+# HTML TEMPLATES
+# --------------------------------------------------------------------------------------
 
 SIDEBAR_HTML = """
 <div id="adminSidebar" class="p-6">
     <div class="flex justify-between items-center mb-10">
-        <h2 class="text-red-600 font-black text-2xl italic tracking-tighter">ADMIN BOX</h2>
+        <h2 class="text-red-600 font-black text-2xl italic tracking-tighter uppercase">Admin Panel</h2>
         <button class="lg:hidden text-2xl" onclick="toggleSidebar()"><i class="fa fa-times text-white"></i></button>
     </div>
     <nav>
@@ -309,13 +314,12 @@ SIDEBAR_HTML = """
         </div>
     </nav>
 </div>
-<script>function toggleSidebar(){ document.getElementById('adminSidebar').classList.toggle('active'); }</script>
 """
 
 ADMIN_DASHBOARD_HTML = """
 <!DOCTYPE html>
 <html>
-<head>{{ ui|safe }}<title>Add/Edit Content</title></head>
+<head>{{ ui|safe }}<title>Admin Dashboard</title></head>
 <body class="flex flex-col lg:flex-row min-h-screen">
     <div class="lg:hidden p-4 glass sticky top-0 z-[1500] flex justify-between items-center">
         <h2 class="text-red-600 font-black italic">ADMIN PANEL</h2>
@@ -332,14 +336,12 @@ ADMIN_DASHBOARD_HTML = """
             </div>
             <div id="results" class="flex gap-4 overflow-x-auto no-scrollbar py-6"></div>
         </div>
-
         <form action="/admin/save" method="POST" class="glass p-6 md:p-8 rounded-[40px] grid grid-cols-1 lg:grid-cols-2 gap-8">
             <input type="hidden" name="cid" value="{{ edit._id if edit else '' }}">
             <input type="hidden" name="type" id="f_type" value="{{ edit.type if edit else 'movie' }}">
             <input type="hidden" name="images" id="f_gallery" value="{{ ','.join(edit.images) if edit and edit.images else '' }}">
             <div>
-                <label class="text-[10px] uppercase font-bold text-gray-500 ml-2">Title</label>
-                <input name="title" id="f_title" value="{{ edit.title if edit else '' }}" class="input-field mb-4" required>
+                <input name="title" id="f_title" value="{{ edit.title if edit else '' }}" placeholder="Title" class="input-field mb-4" required>
                 <div class="grid grid-cols-2 gap-4 mb-4">
                     <input name="year" id="f_year" value="{{ edit.year if edit else '' }}" placeholder="Year" class="input-field">
                     <input name="lang" id="f_lang" value="{{ edit.lang if edit else '' }}" placeholder="Language" class="input-field">
@@ -349,16 +351,16 @@ ADMIN_DASHBOARD_HTML = """
                 <input name="logo" id="f_logo" value="{{ edit.logo if edit else '' }}" placeholder="Logo URL" class="input-field">
             </div>
             <div>
-                <label class="text-[10px] uppercase font-bold text-gray-500 ml-2">Categories</label>
                 <div class="grid grid-cols-2 gap-2 bg-black/40 p-4 rounded-2xl h-32 overflow-y-auto mb-4 border border-gray-800">
                     {% for c in cats %}<label class="text-xs"><input type="checkbox" name="cats" value="{{ c.name }}" {{ 'checked' if edit and c.name in edit.category else '' }}> {{ c.name }}</label>{% endfor %}
                 </div>
                 <textarea name="story" id="f_story" placeholder="Storyline..." class="input-field h-32">{{ edit.story if edit else '' }}</textarea>
-                <button class="w-full btn-red py-4 mt-6 uppercase font-black text-lg italic">{{ 'Update' if edit else 'Save' }} Content</button>
+                <button class="w-full btn-red py-4 mt-6 uppercase font-black">{{ 'Update' if edit else 'Save' }} Content</button>
             </div>
         </form>
     </div>
     <script>
+        function toggleSidebar(){ document.getElementById('adminSidebar').classList.toggle('active'); }
         async function searchTMDB(){
             const q = document.getElementById('tmdb_q').value;
             const t = document.getElementById('tmdb_type').value;
@@ -366,7 +368,7 @@ ADMIN_DASHBOARD_HTML = """
             const data = await res.json();
             const div = document.getElementById('results'); div.innerHTML = '';
             data.results.forEach(m => {
-                div.innerHTML += `<div class="min-w-[120px] cursor-pointer" onclick="fill('${m.id}', '${t}')"><img src="https://image.tmdb.org/t/p/w200${m.poster_path}" class="rounded-xl border-2 border-transparent hover:border-red-600 transition"></div>`;
+                div.innerHTML += `<div class="min-w-[100px] cursor-pointer" onclick="fill('${m.id}', '${t}')"><img src="https://image.tmdb.org/t/p/w200${m.poster_path}" class="rounded-xl"></div>`;
             });
         }
         async function fill(id, type){
@@ -381,7 +383,7 @@ ADMIN_DASHBOARD_HTML = """
             document.getElementById('f_gallery').value = j.gallery;
             document.getElementById('f_story').value = d.overview;
             document.getElementById('f_type').value = type;
-            alert("Data Loaded!");
+            alert("Data Fetched!");
         }
     </script>
 </body>
@@ -391,54 +393,36 @@ ADMIN_DASHBOARD_HTML = """
 ADMIN_MANAGE_HTML = """
 <!DOCTYPE html>
 <html>
-<head>{{ ui|safe }}<title>Manage Content</title></head>
+<head>{{ ui|safe }}<title>Manage</title></head>
 <body class="flex flex-col lg:flex-row min-h-screen">
-    <div class="lg:hidden p-4 glass sticky top-0 z-[1500] flex justify-between items-center">
-        <h2 class="text-red-600 font-black italic uppercase">Manage</h2>
-        <button onclick="toggleSidebar()" class="text-2xl"><i class="fa fa-bars"></i></button>
+    <div class="lg:hidden p-4 glass flex justify-between items-center sticky top-0 z-[1500]">
+        <h2 class="text-red-600 font-black italic">MANAGE</h2>
+        <button onclick="toggleSidebar()"><i class="fa fa-bars"></i></button>
     </div>
     """ + SIDEBAR_HTML + """
     <div class="flex-1 p-4 md:p-10">
-        <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
-            <h2 class="text-2xl font-black italic uppercase">Manage Content</h2>
-            <form class="flex w-full md:w-auto bg-gray-900 rounded-full px-4 border border-gray-800">
-                <input name="q" value="{{ q }}" placeholder="Search here..." class="bg-transparent p-2 outline-none w-full md:w-64">
-                <button><i class="fa fa-search"></i></button>
-            </form>
-        </div>
+        <form class="mb-8 flex gap-4"><input name="q" value="{{ q }}" placeholder="Search..." class="input-field"><button class="btn-red">Search</button></form>
         <form action="/admin/bulk_delete" method="POST">
-            <div class="flex gap-4 mb-6">
-                <label class="flex items-center gap-2 cursor-pointer bg-gray-800 px-4 py-2 rounded-xl text-xs">
-                    <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)"> Select All
-                </label>
-                <button type="submit" class="bg-red-900 px-6 py-2 rounded-xl text-xs font-bold uppercase" onclick="return confirm('Delete selected?')">Bulk Kill</button>
-            </div>
+            <button type="submit" class="bg-red-900 px-6 py-2 rounded-xl mb-4 text-xs font-bold" onclick="return confirm('Kill selected?')">Bulk Kill</button>
             <div class="grid gap-4">
                 {% for m in items %}
-                <div class="glass p-4 rounded-3xl flex items-center justify-between gap-4">
+                <div class="glass p-4 rounded-3xl flex items-center justify-between">
                     <div class="flex items-center gap-4">
-                        <input type="checkbox" name="selected_ids" value="{{ m._id }}" class="item-checkbox">
-                        <img src="{{ m.poster }}" class="h-16 w-12 rounded-lg object-cover">
-                        <div class="truncate">
-                            <h4 class="font-bold text-sm md:text-lg truncate">{{ m.title }}</h4>
-                            <span class="text-[10px] uppercase text-gray-500">{{ m.type }} | {{ m.year }}</span>
-                        </div>
+                        <input type="checkbox" name="selected_ids" value="{{ m._id }}">
+                        <img src="{{ m.poster }}" class="h-12 w-10 rounded">
+                        <span class="font-bold text-sm">{{ m.title }}</span>
                     </div>
                     <div class="flex gap-2">
-                        <a href="/admin/dashboard?edit={{ m._id }}" class="bg-blue-600 p-2 rounded-lg text-xs"><i class="fa fa-edit"></i></a>
-                        {% if m.type == 'movie' %}
-                        <a href="/admin/links/{{ m._id }}" class="bg-indigo-600 p-2 rounded-lg text-xs"><i class="fa fa-link"></i></a>
-                        {% else %}
-                        <a href="/admin/series/{{ m._id }}" class="bg-indigo-600 p-2 rounded-lg text-xs"><i class="fa fa-list-ol"></i></a>
-                        {% endif %}
-                        <a href="/admin/delete/{{ m._id }}" class="bg-red-800 p-2 rounded-lg text-xs" onclick="return confirm('Delete?')"><i class="fa fa-trash"></i></a>
+                        <a href="/admin/dashboard?edit={{ m._id }}" class="bg-blue-600 p-2 rounded text-xs"><i class="fa fa-edit"></i></a>
+                        <a href="/admin/{{ 'links' if m.type=='movie' else 'series' }}/{{ m._id }}" class="bg-indigo-600 p-2 rounded text-xs"><i class="fa fa-link"></i></a>
+                        <a href="/admin/delete/{{ m._id }}" class="bg-red-800 p-2 rounded text-xs" onclick="return confirm('Delete?')"><i class="fa fa-trash"></i></a>
                     </div>
                 </div>
                 {% endfor %}
             </div>
         </form>
     </div>
-    <script>function toggleSelectAll(source) { checkboxes = document.getElementsByClassName('item-checkbox'); for(var i in checkboxes) checkboxes[i].checked = source.checked; }</script>
+    <script>function toggleSidebar(){ document.getElementById('adminSidebar').classList.toggle('active'); }</script>
 </body>
 </html>
 """
@@ -448,26 +432,20 @@ ADMIN_CAT_HTML = """
 <html>
 <head>{{ ui|safe }}<title>Categories</title></head>
 <body class="flex flex-col lg:flex-row min-h-screen">
-    <div class="lg:hidden p-4 glass sticky top-0 z-[1500] flex justify-between items-center">
-        <h2 class="text-red-600 font-black">CATEGORIES</h2>
-        <button onclick="toggleSidebar()"><i class="fa fa-bars"></i></button>
-    </div>
     """ + SIDEBAR_HTML + """
-    <div class="flex-1 p-6 md:p-12 max-w-4xl">
-        <h2 class="text-2xl font-black italic mb-10">CATEGORY MANAGER</h2>
-        <form method="POST" class="flex gap-4 mb-10">
-            <input name="name" placeholder="New Category Name" class="input-field" required>
-            <button class="btn-red">Add</button>
-        </form>
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+    <div class="flex-1 p-10 max-w-4xl">
+        <h2 class="text-2xl font-black italic mb-10">CATEGORIES</h2>
+        <form method="POST" class="flex gap-4 mb-10"><input name="name" placeholder="Category Name" class="input-field" required><button class="btn-red">Add</button></form>
+        <div class="grid grid-cols-2 gap-4">
             {% for c in cats %}
             <div class="glass p-4 rounded-2xl flex justify-between items-center">
                 <span class="font-bold">{{ c.name }}</span>
-                <a href="/admin/cat/delete/{{ c._id }}" class="text-red-600 p-2"><i class="fa fa-trash"></i></a>
+                <a href="/admin/cat/delete/{{ c._id }}" class="text-red-600"><i class="fa fa-trash"></i></a>
             </div>
             {% endfor %}
         </div>
     </div>
+    <script>function toggleSidebar(){ document.getElementById('adminSidebar').classList.toggle('active'); }</script>
 </body>
 </html>
 """
@@ -475,46 +453,42 @@ ADMIN_CAT_HTML = """
 ADMIN_SETTINGS_HTML = """
 <!DOCTYPE html>
 <html>
-<head>{{ ui|safe }}<title>Settings & Ads Hub</title></head>
+<head>{{ ui|safe }}<title>Settings</title></head>
 <body class="flex flex-col lg:flex-row min-h-screen">
     """ + SIDEBAR_HTML + """
     <div class="flex-1 p-6 md:p-12 max-w-5xl">
-        <h2 class="text-2xl font-black italic mb-10">SITE & ADS CONFIGURATION</h2>
+        <h2 class="text-2xl font-black italic mb-10 uppercase">Site & Ads Hub</h2>
         <form method="POST" class="glass p-8 rounded-[40px] space-y-6">
             <div class="grid md:grid-cols-2 gap-6">
-                <div><label class="text-xs uppercase text-gray-500 font-bold block mb-2">Site Name</label><input name="site_name" value="{{ conf.site_name }}" class="input-field"></div>
-                <div><label class="text-xs uppercase text-gray-500 font-bold block mb-2">Logo URL</label><input name="site_logo" value="{{ conf.site_logo }}" class="input-field"></div>
+                <input name="site_name" value="{{ conf.site_name }}" placeholder="Site Name" class="input-field">
+                <input name="site_logo" value="{{ conf.site_logo }}" placeholder="Logo URL" class="input-field">
             </div>
-            
-            <div class="grid md:grid-cols-2 gap-6 p-4 bg-red-900/10 rounded-2xl">
-                <div><label class="text-xs text-gray-500 font-bold">Slider Limit</label><input type="number" name="slider_limit" value="{{ conf.slider_limit }}" class="input-field"></div>
-                <div><label class="text-xs text-gray-500 font-bold">Post Display Limit (Home)</label><input type="number" name="cat_display_limit" value="{{ conf.cat_display_limit }}" class="input-field"></div>
+            <div class="grid md:grid-cols-3 gap-6">
+                <input name="slider_limit" value="{{ conf.slider_limit }}" placeholder="Slider Limit" type="number" class="input-field">
+                <input name="cat_display_limit" value="{{ conf.cat_display_limit }}" placeholder="Cat Limit (Home)" type="number" class="input-field">
+                <input name="ad_timer" value="{{ conf.ad_timer }}" placeholder="Ad Timer" type="number" class="input-field">
             </div>
-
             <div class="p-6 bg-red-900/10 rounded-3xl border border-red-600/20">
-                <h3 class="text-red-600 font-bold mb-4 uppercase italic">Direct Link Ad Settings</h3>
-                <div class="grid md:grid-cols-3 gap-4">
-                    <select name="ad_status" class="input-field"><option value="on" {{ 'selected' if conf.ad_status=='on' }}>Status: ON</option><option value="off" {{ 'selected' if conf.ad_status=='off' }}>Status: OFF</option></select>
-                    <input name="ad_timer" type="number" value="{{ conf.ad_timer }}" placeholder="Timer (sec)" class="input-field">
-                    <input name="direct_ad_link" value="{{ conf.direct_ad_link }}" placeholder="Direct Ad URL" class="input-field">
-                </div>
+                <h3 class="text-red-600 font-bold mb-4 italic">Direct Ad Link</h3>
+                <select name="ad_status" class="input-field mb-4"><option value="on" {{ 'selected' if conf.ad_status=='on' }}>Status: ON</option><option value="off" {{ 'selected' if conf.ad_status=='off' }}>Status: OFF</option></select>
+                <input name="direct_ad_link" value="{{ conf.direct_ad_link }}" placeholder="Direct Ad Link" class="input-field">
             </div>
-
+            <textarea name="header_notice" class="input-field h-20" placeholder="Header Notice">{{ conf.header_notice }}</textarea>
             <div class="grid md:grid-cols-2 gap-4">
-                <div><label class="text-xs text-gray-500 font-bold">Popunder Ad Script</label><textarea name="popunder_ad" class="input-field h-24">{{ conf.popunder_ad }}</textarea></div>
-                <div><label class="text-xs text-gray-500 font-bold">Social Bar Ad Script</label><textarea name="social_bar_ad" class="input-field h-24">{{ conf.social_bar_ad }}</textarea></div>
-                <div><label class="text-xs text-gray-500 font-bold">Header Ad (HTML)</label><textarea name="header_ad" class="input-field h-24">{{ conf.header_ad }}</textarea></div>
-                <div><label class="text-xs text-gray-500 font-bold">Footer Ad (HTML)</label><textarea name="footer_ad" class="input-field h-24">{{ conf.footer_ad }}</textarea></div>
-                <div class="col-span-2"><label class="text-xs text-gray-500 font-bold">Middle Ad (HTML)</label><textarea name="middle_ad" class="input-field h-24">{{ conf.middle_ad }}</textarea></div>
+                <textarea name="popunder_ad" placeholder="Popunder Ad Script" class="input-field h-24">{{ conf.popunder_ad }}</textarea>
+                <textarea name="social_bar_ad" placeholder="Social Bar Script" class="input-field h-24">{{ conf.social_bar_ad }}</textarea>
+                <textarea name="header_ad" placeholder="Header Ad (HTML)" class="input-field h-24">{{ conf.header_ad }}</textarea>
+                <textarea name="footer_ad" placeholder="Footer Ad (HTML)" class="input-field h-24">{{ conf.footer_ad }}</textarea>
+                <textarea name="middle_ad" placeholder="Middle Ad (HTML)" class="input-field h-24 col-span-2">{{ conf.middle_ad }}</textarea>
             </div>
-
-            <div class="grid grid-cols-2 gap-4 border-t border-gray-800 pt-6">
-                <div><label class="text-xs text-gray-500">Admin User</label><input name="admin_user" value="{{ conf.admin_user }}" class="input-field"></div>
-                <div><label class="text-xs text-gray-500">Admin Pass</label><input name="admin_pass" value="{{ conf.admin_pass }}" class="input-field"></div>
+            <div class="grid grid-cols-2 gap-4">
+                <input name="admin_user" value="{{ conf.admin_user }}" class="input-field">
+                <input name="admin_pass" value="{{ conf.admin_pass }}" class="input-field">
             </div>
-            <button class="w-full btn-red py-4 uppercase font-black italic">Save All Settings</button>
+            <button class="w-full btn-red py-4 uppercase font-black">Save All Config</button>
         </form>
     </div>
+    <script>function toggleSidebar(){ document.getElementById('adminSidebar').classList.toggle('active'); }</script>
 </body>
 </html>
 """
@@ -522,41 +496,25 @@ ADMIN_SETTINGS_HTML = """
 ADMIN_LINKS_HTML = """
 <!DOCTYPE html>
 <html>
-<head>{{ ui|safe }}<title>Movie Links</title></head>
-<body class="p-4 md:p-10">
-    <div class="max-w-4xl mx-auto glass p-6 md:p-10 rounded-[50px]">
-        <h2 class="text-xl md:text-3xl font-black mb-8 italic uppercase">Links: {{ m.title }}</h2>
-        <form method="POST" id="linkForm" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
-            <input type="hidden" name="action" id="formAction" value="add">
-            <input type="hidden" name="lid" id="linkId" value="">
-            <input name="q" id="qInput" placeholder="Quality" class="input-field" required>
-            <input name="tg" id="tgInput" placeholder="TG Link" class="input-field">
-            <input name="d" id="dInput" placeholder="Direct Link" class="input-field" required>
-            <button class="btn-red" id="submitBtn">Add</button>
+<head>{{ ui|safe }}<title>Links</title></head>
+<body class="p-10">
+    <div class="max-w-4xl mx-auto glass p-10 rounded-[50px]">
+        <h2 class="text-2xl font-black mb-8 italic">{{ m.title }} Links</h2>
+        <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+            <input type="hidden" name="action" value="add">
+            <input name="q" placeholder="Quality" class="input-field" required>
+            <input name="tg" placeholder="Telegram Link" class="input-field">
+            <input name="d" placeholder="Direct Link" class="input-field" required>
+            <button class="btn-red">Add</button>
         </form>
-        <div class="space-y-3">
-            {% for l in m.movie_links %}
-            <div class="bg-black/40 p-4 rounded-xl flex justify-between items-center">
-                <span class="font-black text-red-600 uppercase">{{ l.q }}</span>
-                <div class="flex gap-4">
-                    <button onclick="editLink('{{ l.id }}', '{{ l.q }}', '{{ l.tg }}', '{{ l.d }}')" class="text-blue-500"><i class="fa fa-edit"></i></button>
-                    <form method="POST" style="display:inline"><input type="hidden" name="action" value="delete"><input type="hidden" name="lid" value="{{ l.id }}"><button class="text-red-900"><i class="fa fa-trash"></i></button></form>
-                </div>
-            </div>
-            {% endfor %}
+        {% for l in m.movie_links %}
+        <div class="bg-black/40 p-4 rounded-xl flex justify-between items-center mb-2">
+            <span class="font-bold text-red-600 uppercase">{{ l.q }}</span>
+            <form method="POST"><input type="hidden" name="action" value="delete"><input type="hidden" name="lid" value="{{ l.id }}"><button class="text-red-900"><i class="fa fa-trash"></i></button></form>
         </div>
-        <a href="/admin/manage" class="block mt-10 text-center text-xs text-gray-500 italic">Back to Hub</a>
+        {% endfor %}
+        <a href="/admin/manage" class="block text-center mt-6 text-gray-500">Back to Manage</a>
     </div>
-    <script>
-    function editLink(id, q, tg, d) {
-        document.getElementById('formAction').value = 'edit';
-        document.getElementById('linkId').value = id;
-        document.getElementById('qInput').value = q;
-        document.getElementById('tgInput').value = tg;
-        document.getElementById('dInput').value = d;
-        document.getElementById('submitBtn').innerText = 'Update';
-    }
-    </script>
 </body>
 </html>
 """
@@ -564,56 +522,31 @@ ADMIN_LINKS_HTML = """
 ADMIN_SERIES_HTML = """
 <!DOCTYPE html>
 <html>
-<head>{{ ui|safe }}<title>Series Manager</title></head>
-<body class="p-4 md:p-10">
-    <div class="max-w-5xl mx-auto glass p-6 md:p-10 rounded-[50px]">
-        <h2 class="text-xl md:text-3xl font-black italic uppercase mb-10">Manage Series: {{ m.title }}</h2>
-        <form method="POST" id="epForm" class="bg-white/5 p-6 rounded-3xl mb-12">
-            <input type="hidden" name="action" id="epAction" value="add_ep">
-            <input type="hidden" name="eid" id="epId" value="">
-            <div class="grid grid-cols-2 gap-4 mb-6">
-                <input name="sn" id="snInput" placeholder="Season No" class="input-field" required>
-                <input name="en" id="enInput" placeholder="Episode No" class="input-field" required>
+<head>{{ ui|safe }}<title>Series</title></head>
+<body class="p-10">
+    <div class="max-w-5xl mx-auto glass p-10 rounded-[50px]">
+        <h2 class="text-2xl font-black mb-8 italic uppercase">{{ m.title }}</h2>
+        <form method="POST" class="grid grid-cols-2 gap-4 mb-8">
+            <input type="hidden" name="action" value="add_ep">
+            <input name="sn" placeholder="Season No" class="input-field" required>
+            <input name="en" placeholder="Episode No" class="input-field" required>
+            <div class="col-span-2 grid grid-cols-3 gap-2">
+                <input name="q[]" placeholder="Quality" class="input-field"><input name="tg[]" placeholder="TG Link" class="input-field"><input name="d[]" placeholder="Direct Link" class="input-field">
             </div>
-            <div id="quality_inputs" class="space-y-4">
-                <div class="grid grid-cols-3 gap-2 bg-black/20 p-4 rounded-xl border border-gray-800"><input name="q[]" placeholder="Quality" class="input-field text-xs"><input name="tg[]" placeholder="Telegram Link" class="input-field text-xs"><input name="d[]" placeholder="Direct Link" class="input-field text-xs"></div>
-            </div>
-            <button type="button" onclick="addMoreQual()" class="mt-4 text-xs text-blue-400 font-bold uppercase">+ Add More Quality</button>
-            <button class="w-full btn-red mt-8 uppercase font-black" id="epSubmitBtn">Save Episode</button>
+            <button class="col-span-2 btn-red uppercase font-black">Add Episode</button>
         </form>
         {% for s in m.seasons %}
-        <div class="mb-10 bg-black/30 p-6 rounded-[30px] border border-gray-900">
-            <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-black text-red-600 italic">Season {{ s.sn }}</h3><form method="POST"><input type="hidden" name="action" value="del_season"><input type="hidden" name="sn" value="{{ s.sn }}"><button class="text-red-900 text-xs font-bold uppercase">Delete Season</button></form></div>
-            <div class="grid gap-4">
+        <div class="mb-6 bg-black/40 p-6 rounded-3xl border border-gray-800">
+            <div class="flex justify-between items-center mb-4"><h3 class="font-bold text-red-600 italic">Season {{ s.sn }}</h3><form method="POST"><input type="hidden" name="action" value="del_season"><input type="hidden" name="sn" value="{{ s.sn }}"><button class="text-xs text-red-900 font-bold uppercase">Delete Season</button></form></div>
+            <div class="grid gap-2">
                 {% for ep in s.eps %}
-                <div class="glass p-4 rounded-2xl flex justify-between items-center">
-                    <div class="font-black text-xs uppercase">Episode {{ ep.en }}</div>
-                    <div class="flex gap-4">
-                        <button onclick='editEp("{{ s.sn }}", "{{ ep.en }}", "{{ ep.id }}", {{ ep.links|tojson }})' class="text-blue-500"><i class="fa fa-edit"></i></button>
-                        <form method="POST" style="display:inline"><input type="hidden" name="action" value="del_ep"><input type="hidden" name="sn" value="{{ s.sn }}"><input type="hidden" name="eid" value="{{ ep.id }}"><button class="text-red-900"><i class="fa fa-trash"></i></button></form>
-                    </div>
-                </div>
+                <div class="glass p-3 flex justify-between items-center text-xs"><span>Episode {{ ep.en }}</span><form method="POST"><input type="hidden" name="action" value="del_ep"><input type="hidden" name="sn" value="{{ s.sn }}"><input type="hidden" name="eid" value="{{ ep.id }}"><button class="text-red-600"><i class="fa fa-trash"></i></button></form></div>
                 {% endfor %}
             </div>
         </div>
         {% endfor %}
+        <a href="/admin/manage" class="block text-center mt-6 text-gray-500">Back</a>
     </div>
-    <script>
-        function addMoreQual(q='', t='', d=''){
-            const div = document.createElement('div'); div.className = "grid grid-cols-3 gap-2 bg-black/20 p-4 rounded-xl border border-gray-800 mt-2";
-            div.innerHTML = `<input name="q[]" value="${q}" class="input-field text-xs"><input name="tg[]" value="${t}" class="input-field text-xs"><input name="d[]" value="${d}" class="input-field text-xs">`;
-            document.getElementById('quality_inputs').appendChild(div);
-        }
-        function editEp(sn, en, eid, links){
-            document.getElementById('epAction').value = 'edit_ep';
-            document.getElementById('epId').value = eid;
-            document.getElementById('snInput').value = sn;
-            document.getElementById('enInput').value = en;
-            document.getElementById('quality_inputs').innerHTML = '';
-            links.forEach(l => addMoreQual(l.q, l.tg, l.d));
-            document.getElementById('epSubmitBtn').innerText = 'Update Episode';
-        }
-    </script>
 </body>
 </html>
 """
@@ -632,9 +565,8 @@ USER_HOME_HTML = """
         </form>
         <button><i class="fa fa-bars text-xl"></i></button>
     </nav>
-    <div class="flex justify-center my-4">{{ conf.header_ad|safe }}</div>
     <div class="bg-red-600 text-white text-center py-1 text-[10px] font-black uppercase"><marquee>{{ conf.header_notice }}</marquee></div>
-    
+    <div class="flex justify-center my-4">{{ conf.header_ad|safe }}</div>
     <main class="p-4 md:px-16">
         {% if not is_search and slider %}
         <div class="flex gap-4 overflow-x-auto no-scrollbar py-6">
@@ -650,11 +582,11 @@ USER_HOME_HTML = """
         <div class="flex justify-center my-8">{{ conf.middle_ad|safe }}</div>
 
         {% if is_search %}
-            <h2 class="text-2xl font-black mb-8 border-l-8 border-red-600 pl-4 italic tracking-tighter uppercase">{{ cat_name if cat_name else 'Search' }}</h2>
+            <h2 class="text-2xl font-black mb-8 border-l-8 border-red-600 pl-4 italic tracking-tighter uppercase">{{ cat_name if cat_name else 'Results' }}</h2>
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
                 {% for m in items %}
                 <div class="cursor-pointer group" onclick="handleAction(event, '/view/{{ m._id }}')">
-                    <div class="relative rounded-2xl overflow-hidden aspect-[2/3] border border-gray-800"><img src="{{ m.poster }}" class="w-full h-full object-cover"></div>
+                    <div class="relative rounded-2xl overflow-hidden aspect-[2/3] border border-gray-800"><img src="{{ m.poster }}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500"></div>
                     <h3 class="mt-3 font-bold text-xs truncate italic tracking-tighter">{{ m.title }}</h3>
                 </div>
                 {% endfor %}
@@ -667,7 +599,7 @@ USER_HOME_HTML = """
                     <a href="/category/{{ cat.name }}" class="text-red-600 font-bold text-xs uppercase italic border-b border-red-600">See More</a>
                 </div>
                 <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
-                    {% for m in cat.items %}
+                    {% for m in cat.posts %}
                     <div class="cursor-pointer group" onclick="handleAction(event, '/view/{{ m._id }}')">
                         <div class="relative rounded-2xl overflow-hidden aspect-[2/3] border border-gray-800"><img src="{{ m.poster }}" class="w-full h-full object-cover"></div>
                         <h3 class="mt-3 font-bold text-xs truncate italic tracking-tighter">{{ m.title }}</h3>
@@ -702,11 +634,10 @@ USER_DETAIL_HTML = """
             <p class="text-gray-300 text-sm md:text-lg max-w-4xl italic mt-4">{{ m.story }}</p>
         </div>
     </div>
-
     <div class="p-6 md:p-20">
         <div class="flex justify-center mb-10">{{ conf.middle_ad|safe }}</div>
         {% if m.type == 'movie' %}
-            <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Direct Links</h3>
+            <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Watch Now</h3>
             <div class="grid gap-4 max-w-3xl">
                 {% for l in m.movie_links %}
                 <div class="glass p-5 rounded-2xl flex justify-between items-center">
@@ -726,14 +657,14 @@ USER_DETAIL_HTML = """
             <div class="s-content hidden grid gap-6" id="box-{{ s.sn }}">
                 {% for ep in s.eps %}
                 <div class="glass p-6 rounded-[30px]">
-                    <div class="font-black text-[12px] text-gray-400 uppercase mb-4 tracking-widest">Episode {{ ep.en }}</div>
+                    <div class="font-black text-[12px] text-gray-500 uppercase mb-4 tracking-widest">Episode {{ ep.en }}</div>
                     <div class="grid md:grid-cols-2 gap-4">
                         {% for l in ep.links %}
                         <div class="bg-gray-800/30 p-4 rounded-2xl flex justify-between items-center">
-                            <span class="text-red-500 font-black italic text-sm">{{ l.q }}</span>
+                            <span class="text-red-500 font-black italic text-xs">{{ l.q }}</span>
                             <div class="flex gap-4 items-center">
-                                {% if l.tg %}<a href="#" onclick="handleAction(event, '{{ l.tg }}')" class="text-sky-500 text-2xl"><i class="fab fa-telegram"></i></a>{% endif %}
-                                <button onclick="handleAction(event, '{{ l.d }}')" class="bg-white text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase italic">Direct Link</button>
+                                {% if l.tg %}<a href="#" onclick="handleAction(event, '{{ l.tg }}')" class="text-sky-500 text-xl"><i class="fab fa-telegram"></i></a>{% endif %}
+                                <button onclick="handleAction(event, '{{ l.d }}')" class="bg-white text-black px-4 py-2 rounded-xl text-[10px] font-black italic">DIRECT LINK</button>
                             </div>
                         </div>
                         {% endfor %}
@@ -747,7 +678,7 @@ USER_DETAIL_HTML = """
         <div class="mt-20">
             <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Gallery</h3>
             <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {% for img in m.images %}<img src="{{ img }}" class="rounded-2xl cursor-pointer hover:scale-105 transition shadow-2xl" onclick="handleAction(event, '{{ img }}')">{% endfor %}
+                {% for img in m.images %}<img src="{{ img }}" class="rounded-2xl cursor-pointer hover:scale-105 transition" onclick="handleAction(event, '{{ img }}')">{% endfor %}
             </div>
         </div>
         {% endif %}
@@ -770,12 +701,12 @@ ADMIN_LOGIN_HTML = """
 <!DOCTYPE html>
 <html>
 <head>{{ ui|safe }}<title>Admin Login</title></head>
-<body class="flex items-center justify-center min-h-screen p-6">
-    <form method="POST" class="glass p-12 rounded-[60px] w-full max-w-lg text-center">
-        <h2 class="text-4xl font-black text-red-600 mb-10 uppercase italic">Admin Portal</h2>
+<body class="flex items-center justify-center min-h-screen">
+    <form method="POST" class="glass p-12 rounded-[60px] w-full max-w-sm text-center">
+        <h2 class="text-4xl font-black text-red-600 mb-10 uppercase italic">Login</h2>
         <input name="u" placeholder="Admin Username" class="input-field mb-6 text-center" required>
         <input name="p" type="password" placeholder="Passcode" class="input-field mb-8 text-center" required>
-        <button class="w-full btn-red py-4 rounded-3xl font-black uppercase tracking-widest">Login</button>
+        <button class="w-full btn-red py-4 font-black">LOGIN</button>
     </form>
 </body>
 </html>
