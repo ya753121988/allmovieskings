@@ -25,7 +25,7 @@ if not settings_col.find_one({"id": "config"}):
         "movie_limit": 20, "series_limit": 20, "slider_limit": 10
     })
 
-# --- UI STYLES (Ultra Premium Responsive) ---
+# --- UI STYLES (Ultra Premium & Fully Auto-Responsive) ---
 UI_HEAD = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -34,16 +34,24 @@ UI_HEAD = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;900&display=swap');
     :root { --p: #e50914; --bg: #05070a; }
-    body { background: var(--bg); color: #f8fafc; font-family: 'Inter', sans-serif; }
-    .glass { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.05); }
-    .btn-red { background: var(--p); color: white; border-radius: 8px; font-weight: bold; transition: 0.3s; padding: 10px 20px; text-align: center; cursor: pointer; }
+    body { background: var(--bg); color: #f8fafc; font-family: 'Inter', sans-serif; margin: 0; padding: 0; overflow-x: hidden; }
+    .glass { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(15px); border: 1px solid rgba(255,255,255,0.05); }
+    .btn-red { background: var(--p); color: white; border-radius: 8px; font-weight: bold; transition: 0.3s; padding: 10px 20px; text-align: center; cursor: pointer; display: inline-block; }
     .btn-red:hover { background: #b20710; transform: scale(1.02); }
     .input-field { background: #0f172a; border: 1px solid #1e293b; color: white; padding: 12px; border-radius: 12px; width: 100%; outline: none; }
     .input-field:focus { border-color: var(--p); }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .tab-active { border-bottom: 4px solid var(--p); color: var(--p); font-weight: 900; }
-    .admin-sidebar a { display: flex; align-items: center; padding: 12px; border-radius: 10px; color: #94a3b8; transition: 0.2s; }
-    .admin-sidebar a:hover, .admin-sidebar a.active { background: #1e293b; color: white; }
+    
+    /* Responsive Sidebar Logic */
+    .admin-sidebar { position: fixed; top: 0; left: -100%; height: 100%; width: 280px; z-index: 1000; transition: 0.4s; padding: 2rem; background: #0f172a; border-right: 1px solid #1e293b; }
+    .admin-sidebar.active { left: 0; }
+    @media (min-width: 1024px) {
+        .admin-sidebar { left: 0; position: sticky; width: 320px; }
+        .menu-toggle { display: none; }
+    }
+    .admin-sidebar a { display: flex; align-items: center; padding: 14px; border-radius: 12px; color: #94a3b8; transition: 0.2s; margin-bottom: 8px; }
+    .admin-sidebar a:hover, .admin-sidebar a.active { background: #1e293b; color: white; border-left: 4px solid var(--p); }
 </style>
 """
 
@@ -87,7 +95,6 @@ def admin_dashboard():
     stats = {"total": contents_col.count_documents({}), "movie": contents_col.count_documents({"type":"movie"}), "tv": contents_col.count_documents({"type":"tv"})}
     return render_template_string(ADMIN_DASHBOARD_HTML, ui=UI_HEAD, conf=conf, cats=cats, stats=stats)
 
-# TMDB Auto Fetch API
 @app.route('/api/tmdb_search')
 def api_tmdb_search():
     q = request.args.get('q'); t = request.args.get('t', 'movie')
@@ -103,7 +110,6 @@ def api_tmdb_info():
     logo = f"https://image.tmdb.org/t/p/original{logos[0]['file_path']}" if logos else ""
     return jsonify({"data": res, "logo": logo})
 
-# Save/Edit Content
 @app.route('/admin/save', methods=['POST'])
 def admin_save():
     cid = request.form.get('cid')
@@ -128,7 +134,6 @@ def admin_manage():
     items = list(contents_col.find({"title": {"$regex": q, "$options": "i"}}).sort("_id", -1))
     return render_template_string(ADMIN_MANAGE_HTML, ui=UI_HEAD, items=items)
 
-# Manage Movie Links
 @app.route('/admin/links/<id>', methods=['GET', 'POST'])
 def manage_links(id):
     if request.method == 'POST':
@@ -142,7 +147,6 @@ def manage_links(id):
     item = contents_col.find_one({"_id": ObjectId(id)})
     return render_template_string(ADMIN_LINKS_HTML, ui=UI_HEAD, m=item)
 
-# Manage Seasons & Episodes
 @app.route('/admin/series/<id>', methods=['GET', 'POST'])
 def manage_series(id):
     if request.method == 'POST':
@@ -162,7 +166,6 @@ def manage_series(id):
     item = contents_col.find_one({"_id": ObjectId(id)})
     return render_template_string(ADMIN_SERIES_HTML, ui=UI_HEAD, m=item)
 
-# Settings Update
 @app.route('/admin/settings', methods=['POST'])
 def admin_settings():
     settings_col.update_one({"id": "config"}, {"$set": request.form.to_dict()})
@@ -178,7 +181,7 @@ def admin_delete(id): contents_col.delete_one({"_id": ObjectId(id)}); return red
 def logout(): session.clear(); return redirect('/')
 
 # --------------------------------------------------------------------------------------
-# HTML TEMPLATES (Inlined)
+# HTML TEMPLATES (Inlined - Updated for Mobile Auto-Mode)
 # --------------------------------------------------------------------------------------
 
 USER_HOME_HTML = """
@@ -186,10 +189,10 @@ USER_HOME_HTML = """
 <html>
 <head>{{ ui|safe }}<title>{{ conf.site_name }}</title></head>
 <body>
-    <nav class="p-4 glass sticky top-0 z-50 flex justify-between items-center px-6">
+    <nav class="p-4 glass sticky top-0 z-50 flex justify-between items-center px-4 md:px-6">
         <div class="flex items-center gap-4">
             <button onclick="document.getElementById('side').classList.toggle('hidden')" class="text-xl"><i class="fa fa-bars text-red-600"></i></button>
-            <h1 class="text-2xl font-black text-red-600 italic tracking-tighter" onclick="location.href='/'">{{ conf.site_name }}</h1>
+            <h1 class="text-xl md:text-2xl font-black text-red-600 italic tracking-tighter cursor-pointer" onclick="location.href='/'">{{ conf.site_name }}</h1>
         </div>
         <form class="hidden md:flex bg-gray-900/50 border border-gray-800 rounded-full px-4 py-1 items-center">
             <input name="s" placeholder="Search..." class="bg-transparent text-sm outline-none w-64">
@@ -199,13 +202,13 @@ USER_HOME_HTML = """
     <div id="side" class="hidden fixed inset-0 z-[60]">
         <div class="absolute inset-0 bg-black/90" onclick="this.parentElement.classList.add('hidden')"></div>
         <div class="absolute left-0 top-0 h-full w-80 glass p-10">
-            <h2 class="text-2xl font-black text-red-600 mb-10 italic">MENU</h2>
+            <h2 class="text-2xl font-black text-red-600 mb-10 italic uppercase">MENU</h2>
             <div class="grid gap-6">
                 <a href="/"><i class="fa fa-home mr-3"></i> Home</a>
-                <div class="text-[10px] text-gray-600 uppercase font-black mt-4">Categories</div>
+                <div class="text-[10px] text-gray-600 uppercase font-black mt-4 border-b border-gray-800 pb-2">Categories</div>
                 {% for c in cats %}<a href="/?s={{ c.name }}" class="text-sm hover:text-red-500">{{ c.name }}</a>{% endfor %}
                 <hr class="border-gray-800">
-                <a href="/admin/login" class="text-xs text-gray-500">Admin Access</a>
+                <a href="/admin/login" class="text-xs text-gray-500">Admin Login</a>
             </div>
         </div>
     </div>
@@ -213,31 +216,242 @@ USER_HOME_HTML = """
     <main class="p-4 md:px-16">
         <div class="flex gap-4 overflow-x-auto no-scrollbar py-6">
             {% for m in slider %}
-            <div class="min-w-[300px] md:min-w-[450px] h-44 md:h-64 relative rounded-[30px] overflow-hidden flex-shrink-0 cursor-pointer" onclick="location.href='/view/{{ m._id }}'">
+            <div class="min-w-[280px] md:min-w-[450px] h-44 md:h-64 relative rounded-[20px] md:rounded-[30px] overflow-hidden flex-shrink-0 cursor-pointer" onclick="location.href='/view/{{ m._id }}'">
                 <img src="{{ m.backdrop }}" class="w-full h-full object-cover">
                 <div class="absolute inset-0 bg-gradient-to-t from-black via-transparent p-6 flex flex-col justify-end">
-                    <p class="font-black text-xl uppercase tracking-tighter">{{ m.title }}</p>
-                    <span class="text-xs text-gray-400 font-bold uppercase">{{ m.year }} • {{ m.lang }}</span>
+                    <p class="font-black text-lg md:text-xl uppercase tracking-tighter">{{ m.title }}</p>
+                    <span class="text-[10px] md:text-xs text-gray-400 font-bold uppercase">{{ m.year }} • {{ m.lang }}</span>
                 </div>
             </div>
             {% endfor %}
         </div>
-        <h2 class="text-2xl font-black mb-8 mt-12 border-l-8 border-red-600 pl-4 italic tracking-tighter uppercase">Recommended For You</h2>
-        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
+        <h2 class="text-xl md:text-2xl font-black mb-8 mt-12 border-l-8 border-red-600 pl-4 italic tracking-tighter uppercase">Recommended</h2>
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 md:gap-6">
             {% for m in items %}
             <div class="cursor-pointer group" onclick="location.href='/view/{{ m._id }}'">
-                <div class="relative rounded-2xl overflow-hidden aspect-[2/3] border border-gray-800 shadow-2xl">
+                <div class="relative rounded-xl md:rounded-2xl overflow-hidden aspect-[2/3] border border-gray-800">
                     <img src="{{ m.poster }}" class="w-full h-full object-cover group-hover:scale-110 transition duration-500">
                     <div class="absolute top-2 right-2 glass px-2 py-1 rounded text-[10px] font-bold text-red-500">{{ m.lang }}</div>
                 </div>
                 <div class="mt-3 px-1">
-                    <h3 class="font-bold text-sm truncate uppercase group-hover:text-red-500 transition">{{ m.title }}</h3>
+                    <h3 class="font-bold text-xs md:text-sm truncate uppercase group-hover:text-red-500 transition">{{ m.title }}</h3>
                     <p class="text-[10px] text-gray-500 font-bold uppercase">{{ m.year }}</p>
                 </div>
             </div>
             {% endfor %}
         </div>
     </main>
+</body>
+</html>
+"""
+
+ADMIN_DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html>
+<head>{{ ui|safe }}<title>Admin Dashboard</title></head>
+<body class="flex flex-col lg:flex-row min-h-screen">
+    <!-- Mobile Toggle Button -->
+    <div class="lg:hidden flex items-center justify-between p-4 glass sticky top-0 z-[1100]">
+        <h2 class="text-red-600 font-black text-xl italic uppercase">Admin Panel</h2>
+        <button onclick="document.getElementById('sideAdmin').classList.toggle('active')" class="text-2xl p-2"><i class="fa fa-bars"></i></button>
+    </div>
+
+    <!-- Sidebar (Auto Responsive) -->
+    <div id="sideAdmin" class="admin-sidebar overflow-y-auto no-scrollbar">
+        <h2 class="text-red-600 font-black text-3xl italic mb-10 tracking-tighter hidden lg:block">ADMIN BOX</h2>
+        <a href="/admin/dashboard" class="active"><i class="fa fa-home mr-3"></i> Dashboard</a>
+        <a href="/admin/manage"><i class="fa fa-tasks mr-3"></i> Manage Content</a>
+        <div class="mt-10 pt-10 border-t border-gray-800">
+            <a href="/logout" class="text-red-500"><i class="fa fa-sign-out mr-3"></i> Logout</a>
+            <button onclick="document.getElementById('sideAdmin').classList.remove('active')" class="lg:hidden mt-4 w-full btn-red">Close Menu</button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 p-4 md:p-8 lg:p-12 space-y-10 w-full overflow-x-hidden">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
+            <div class="glass p-8 rounded-3xl text-center"><p class="text-[10px] uppercase font-black text-gray-500">Total</p><h3 class="text-4xl md:text-5xl font-black text-red-600">{{ stats.total }}</h3></div>
+            <div class="glass p-8 rounded-3xl text-center"><p class="text-[10px] uppercase font-black text-gray-500">Movies</p><h3 class="text-4xl md:text-5xl font-black">{{ stats.movie }}</h3></div>
+            <div class="glass p-8 rounded-3xl text-center"><p class="text-[10px] uppercase font-black text-gray-500">Series</p><h3 class="text-4xl md:text-5xl font-black">{{ stats.tv }}</h3></div>
+        </div>
+
+        <div class="glass p-6 md:p-10 rounded-[30px] md:rounded-[40px]">
+            <h3 class="text-xl font-black mb-6 text-red-600 italic uppercase">Auto Fetch (TMDB)</h3>
+            <div class="flex flex-col sm:flex-row gap-4">
+                <select id="tmdb_type" class="input-field sm:w-32"><option value="movie">Movie</option><option value="tv">TV Series</option></select>
+                <input id="tmdb_q" placeholder="Search Movie/Series..." class="input-field">
+                <button onclick="searchTMDB()" class="btn-red w-full sm:w-auto">SEARCH</button>
+            </div>
+            <div id="results" class="flex gap-4 overflow-x-auto no-scrollbar py-6"></div>
+        </div>
+
+        <form action="/admin/save" method="POST" class="glass p-6 md:p-10 rounded-[30px] md:rounded-[40px] grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <input type="hidden" name="cid" id="f_cid">
+            <input type="hidden" name="type" id="f_type">
+            <div class="space-y-4">
+                <label class="text-[10px] font-black uppercase text-gray-500 ml-2">Main Title</label>
+                <input name="title" id="f_title" class="input-field" required>
+                <div class="grid grid-cols-2 gap-4">
+                    <input name="year" id="f_year" placeholder="Year" class="input-field">
+                    <input name="lang" id="f_lang" placeholder="Language" class="input-field">
+                </div>
+                <input name="poster" id="f_poster" placeholder="Poster URL" class="input-field">
+                <input name="backdrop" id="f_backdrop" placeholder="Backdrop URL" class="input-field">
+                <input name="logo" id="f_logo" placeholder="Logo URL" class="input-field">
+            </div>
+            <div class="space-y-4">
+                <label class="text-[10px] font-black uppercase text-gray-500 ml-2">Categories</label>
+                <div class="grid grid-cols-2 gap-2 bg-black/40 p-4 rounded-2xl border border-gray-800 h-32 overflow-y-auto">
+                    {% for c in cats %}<label class="text-xs flex items-center gap-2"><input type="checkbox" name="cats" value="{{ c.name }}"> {{ c.name }}</label>{% endfor %}
+                </div>
+                <label class="text-[10px] font-black uppercase text-gray-500 ml-2">Storyline</label>
+                <textarea name="story" id="f_story" class="input-field h-32"></textarea>
+                <button class="w-full btn-red py-4 rounded-2xl font-black text-lg italic uppercase">SAVE CONTENT</button>
+            </div>
+        </form>
+    </div>
+    <script>
+        async function searchTMDB(){
+            const q = document.getElementById('tmdb_q').value;
+            const t = document.getElementById('tmdb_type').value;
+            const res = await fetch(`/api/tmdb_search?q=${q}&t=${t}`);
+            const data = await res.json();
+            const div = document.getElementById('results');
+            div.innerHTML = '';
+            data.results.forEach(m => {
+                div.innerHTML += `<div class="min-w-[120px] cursor-pointer" onclick="fill('${m.id}', '${t}')"><img src="https://image.tmdb.org/t/p/w200${m.poster_path}" class="rounded-xl border-2 border-transparent hover:border-red-600 transition"></div>`;
+            });
+        }
+        async function fill(id, type){
+            const res = await fetch(`/api/tmdb_info?id=${id}&t=${type}`);
+            const j = await res.json(); const d = j.data;
+            document.getElementById('f_cid').value = '';
+            document.getElementById('f_title').value = d.title || d.name;
+            document.getElementById('f_year').value = (d.release_date || d.first_air_date).split('-')[0];
+            document.getElementById('f_lang').value = d.original_language.toUpperCase();
+            document.getElementById('f_poster').value = 'https://image.tmdb.org/t/p/w500' + d.poster_path;
+            document.getElementById('f_backdrop').value = 'https://image.tmdb.org/t/p/original' + d.backdrop_path;
+            document.getElementById('f_logo').value = j.logo;
+            document.getElementById('f_story').value = d.overview;
+            document.getElementById('f_type').value = type;
+            alert("Data Loaded! Verification successful.");
+        }
+    </script>
+</body>
+</html>
+"""
+
+ADMIN_MANAGE_HTML = """
+<!DOCTYPE html>
+<html>
+<head>{{ ui|safe }}<title>Content Hub</title></head>
+<body class="p-4 md:p-10">
+    <div class="max-w-6xl mx-auto">
+        <div class="flex justify-between items-center mb-8">
+            <h2 class="text-2xl md:text-4xl font-black italic uppercase tracking-tighter">Content Hub</h2>
+            <a href="/admin/dashboard" class="btn-red text-xs">Back</a>
+        </div>
+        <div class="grid gap-4">
+            {% for m in items %}
+            <div class="glass p-4 md:p-6 rounded-[20px] md:rounded-[40px] flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div class="flex items-center gap-4 w-full">
+                    <img src="{{ m.poster }}" class="h-16 w-12 rounded-lg object-cover">
+                    <div class="truncate">
+                        <h4 class="text-md md:text-xl font-black italic truncate">{{ m.title }}</h4>
+                        <span class="text-[10px] font-bold text-gray-500 uppercase">{{ m.type }} | {{ m.year }}</span>
+                    </div>
+                </div>
+                <div class="flex gap-2 w-full sm:w-auto">
+                    {% if m.type == 'movie' %}
+                    <a href="/admin/links/{{ m._id }}" class="flex-1 text-center bg-blue-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase italic">Links</a>
+                    {% else %}
+                    <a href="/admin/series/{{ m._id }}" class="flex-1 text-center bg-indigo-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase italic">Episodes</a>
+                    {% endif %}
+                    <a href="/admin/delete/{{ m._id }}" class="flex-1 text-center bg-red-900 px-4 py-2 rounded-xl text-[10px] font-black uppercase" onclick="return confirm('Confirm Delete?')">Kill</a>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+ADMIN_LINKS_HTML = """
+<!DOCTYPE html>
+<html>
+<head>{{ ui|safe }}<title>Movie Links</title></head>
+<body class="p-4 md:p-10">
+    <div class="max-w-4xl mx-auto glass p-6 md:p-10 rounded-[30px] md:rounded-[50px]">
+        <h2 class="text-xl md:text-3xl font-black mb-8 italic uppercase tracking-tighter">Links: {{ m.title }}</h2>
+        <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
+            <input type="hidden" name="action" value="add">
+            <input name="q" placeholder="Quality (e.g. 720p)" class="input-field" required>
+            <input name="tg" placeholder="Telegram Link" class="input-field" required>
+            <input name="d" placeholder="Direct Link" class="input-field" required>
+            <button class="btn-red">Add Link</button>
+        </form>
+        <div class="space-y-3">
+            {% for l in m.movie_links %}
+            <form method="POST" class="bg-black/40 p-4 rounded-xl flex justify-between items-center">
+                <input type="hidden" name="action" value="delete"><input type="hidden" name="lid" value="{{ l.id }}">
+                <span class="font-black text-red-600 italic">{{ l.q }}</span>
+                <button class="text-red-900 text-[10px] font-black uppercase">Remove</button>
+            </form>
+            {% endfor %}
+        </div>
+        <a href="/admin/manage" class="block mt-8 text-center text-gray-500 text-xs">Back to Hub</a>
+    </div>
+</body>
+</html>
+"""
+
+ADMIN_SERIES_HTML = """
+<!DOCTYPE html>
+<html>
+<head>{{ ui|safe }}<title>Series Hub</title></head>
+<body class="p-4 md:p-10">
+    <div class="max-w-5xl mx-auto glass p-6 md:p-10 rounded-[30px] md:rounded-[50px]">
+        <h2 class="text-xl md:text-3xl font-black mb-10 italic uppercase tracking-tighter">Series: {{ m.title }}</h2>
+        <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-12 bg-white/5 p-6 md:p-8 rounded-3xl">
+            <input type="hidden" name="action" value="add_ep">
+            <input name="sn" placeholder="Season No" class="input-field" required>
+            <input name="en" placeholder="Episode No" class="input-field" required>
+            <input name="links" placeholder="Format: Quality|TG|Direct" class="input-field md:col-span-2" required>
+            <button class="btn-red md:col-span-4">ADD EPISODE</button>
+        </form>
+
+        {% for s in m.seasons %}
+        <div class="mb-10">
+            <h3 class="text-xl font-black text-red-600 mb-6 italic border-b border-red-900/20 pb-2">Season {{ s.sn }}</h3>
+            <div class="grid gap-4">
+                {% for ep in s.eps %}
+                <form method="POST" class="glass p-4 rounded-2xl flex justify-between items-center border-l-4 border-red-600">
+                    <input type="hidden" name="action" value="del_ep"><input type="hidden" name="sn" value="{{ s.sn }}"><input type="hidden" name="eid" value="{{ ep.id }}">
+                    <div class="font-black uppercase text-xs tracking-widest">EP {{ ep.en }}</div>
+                    <button class="text-red-900 text-[10px] font-black uppercase">Delete</button>
+                </form>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+        <a href="/admin/manage" class="block text-center text-gray-600 text-xs mt-10">Return to Hub</a>
+    </div>
+</body>
+</html>
+"""
+
+ADMIN_LOGIN_HTML = """
+<!DOCTYPE html>
+<html>
+<head>{{ ui|safe }}<title>Admin Login</title></head>
+<body class="flex items-center justify-center min-h-screen p-6">
+    <form method="POST" class="glass p-10 md:p-16 rounded-[40px] md:rounded-[60px] w-full max-w-lg shadow-2xl text-center">
+        <h2 class="text-3xl md:text-5xl font-black text-red-600 italic tracking-tighter mb-10 uppercase">Admin Gate</h2>
+        <input name="u" placeholder="Admin Username" class="input-field text-center text-lg mb-6" required>
+        <input name="p" type="password" placeholder="Passcode" class="input-field text-center text-lg mb-8" required>
+        <button class="w-full btn-red py-5 rounded-3xl text-xl font-black uppercase tracking-widest">Login Access</button>
+    </form>
 </body>
 </html>
 """
@@ -253,8 +467,8 @@ USER_DETAIL_HTML = """
         <button onclick="history.back()" class="absolute top-8 left-8 glass h-12 w-12 rounded-full flex items-center justify-center"><i class="fa fa-arrow-left"></i></button>
         <div class="absolute bottom-12 left-6 md:left-20">
             {% if m.logo %}<img src="{{ m.logo }}" class="w-64 md:w-96 mb-6">
-            {% else %}<h1 class="text-5xl md:text-8xl font-black italic tracking-tighter uppercase mb-4">{{ m.title }}</h1>{% endif %}
-            <div class="flex gap-4 text-xs font-black text-gray-400 items-center uppercase tracking-widest">
+            {% else %}<h1 class="text-4xl md:text-8xl font-black italic tracking-tighter uppercase mb-4">{{ m.title }}</h1>{% endif %}
+            <div class="flex gap-4 text-[10px] md:text-xs font-black text-gray-400 items-center uppercase tracking-widest">
                 <span class="bg-red-600 text-white px-2 py-1 rounded">ULTRA HD</span>
                 <span>{{ m.year }}</span>
                 <span>{{ m.lang }}</span>
@@ -265,7 +479,7 @@ USER_DETAIL_HTML = """
     </div>
     <div class="p-6 md:p-20">
         {% if m.type == 'movie' %}
-            <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Watch Now</h3>
+            <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Links</h3>
             <div class="grid gap-4 max-w-3xl">
                 {% for l in m.movie_links %}
                 <div class="glass p-5 rounded-2xl flex justify-between items-center">
@@ -286,7 +500,7 @@ USER_DETAIL_HTML = """
             {% for s in m.seasons %}
             <div class="s-content hidden grid gap-6" id="box-{{ s.sn }}">
                 {% for ep in s.eps %}
-                <div class="glass p-8 rounded-[40px]">
+                <div class="glass p-6 md:p-8 rounded-[30px] md:rounded-[40px]">
                     <div class="font-black text-[10px] text-gray-500 uppercase mb-4 tracking-widest">Episode {{ ep.en }}</div>
                     <div class="grid md:grid-cols-2 gap-4">
                         {% for l in ep.links %}
@@ -314,227 +528,6 @@ USER_DETAIL_HTML = """
         }
         window.onload = () => { if(document.querySelector('.s-tab')) document.querySelector('.s-tab').click(); }
     </script>
-</body>
-</html>
-"""
-
-ADMIN_DASHBOARD_HTML = """
-<!DOCTYPE html>
-<html>
-<head>{{ ui|safe }}<title>Mega Dashboard</title></head>
-<body class="flex flex-col md:flex-row min-h-screen">
-    <div class="w-full md:w-80 h-screen glass sticky top-0 p-8 admin-sidebar overflow-y-auto">
-        <h2 class="text-red-600 font-black text-3xl italic mb-12 tracking-tighter">ADMIN BOX</h2>
-        <a href="/admin/dashboard" class="active"><i class="fa fa-home mr-3"></i> Dashboard</a>
-        <a href="/admin/manage"><i class="fa fa-tasks mr-3"></i> Manage Content</a>
-        <a href="/logout" class="mt-20 text-red-900"><i class="fa fa-sign-out mr-3"></i> Logout</a>
-    </div>
-    <div class="flex-1 p-6 md:p-12 space-y-10">
-        <div class="grid md:grid-cols-3 gap-6">
-            <div class="glass p-8 rounded-3xl text-center"><p class="text-[10px] uppercase font-black text-gray-500">Total Items</p><h3 class="text-5xl font-black text-red-600">{{ stats.total }}</h3></div>
-            <div class="glass p-8 rounded-3xl text-center"><p class="text-[10px] uppercase font-black text-gray-500">Movies</p><h3 class="text-5xl font-black">{{ stats.movie }}</h3></div>
-            <div class="glass p-8 rounded-3xl text-center"><p class="text-[10px] uppercase font-black text-gray-500">Series</p><h3 class="text-5xl font-black">{{ stats.tv }}</h3></div>
-        </div>
-
-        <!-- 1. AUTO SEARCH & ADD -->
-        <div class="glass p-10 rounded-[40px] border-red-600/20">
-            <h3 class="text-xl font-black mb-6 text-red-600 italic uppercase">Auto Fetch (TMDB Mode)</h3>
-            <div class="flex gap-4">
-                <select id="tmdb_type" class="input-field w-32"><option value="movie">Movie</option><option value="tv">TV Series</option></select>
-                <input id="tmdb_q" placeholder="Enter Movie/Series Name..." class="input-field flex-1">
-                <button onclick="searchTMDB()" class="btn-red px-10">SEARCH</button>
-            </div>
-            <div id="results" class="flex gap-4 overflow-x-auto no-scrollbar py-6"></div>
-        </div>
-
-        <!-- 2. EDIT FORM -->
-        <form action="/admin/save" method="POST" class="glass p-10 rounded-[40px] grid md:grid-cols-2 gap-8">
-            <input type="hidden" name="cid" id="f_cid">
-            <input type="hidden" name="type" id="f_type">
-            <div>
-                <label class="text-[10px] font-black uppercase text-gray-500 ml-2">Main Title</label>
-                <input name="title" id="f_title" class="input-field mb-4" required>
-                <div class="grid grid-cols-2 gap-4">
-                    <input name="year" id="f_year" placeholder="Year" class="input-field">
-                    <input name="lang" id="f_lang" placeholder="Lang" class="input-field">
-                </div>
-                <label class="text-[10px] font-black uppercase text-gray-500 mt-4 block ml-2">Images & Logo</label>
-                <input name="poster" id="f_poster" placeholder="Poster URL" class="input-field mb-2">
-                <input name="backdrop" id="f_backdrop" placeholder="Backdrop URL" class="input-field mb-2">
-                <input name="logo" id="f_logo" placeholder="Logo PNG URL" class="input-field">
-            </div>
-            <div>
-                <label class="text-[10px] font-black uppercase text-gray-500 ml-2">Categories</label>
-                <div class="grid grid-cols-2 gap-2 bg-black/40 p-4 rounded-2xl border border-gray-800 h-28 overflow-y-auto mb-4">
-                    {% for c in cats %}<label class="text-xs"><input type="checkbox" name="cats" value="{{ c.name }}"> {{ c.name }}</label>{% endfor %}
-                </div>
-                <label class="text-[10px] font-black uppercase text-gray-500 ml-2">Storyline</label>
-                <textarea name="story" id="f_story" class="input-field h-32"></textarea>
-                <button class="w-full btn-red py-4 rounded-3xl font-black text-xl mt-6 italic tracking-widest">SAVE / UPDATE CONTENT</button>
-            </div>
-        </form>
-
-        <!-- 3. QUICK SETTINGS -->
-        <div class="glass p-10 rounded-[40px]">
-            <h3 class="text-xl font-black mb-6 text-red-600 italic uppercase tracking-tighter">Site Settings</h3>
-            <form action="/admin/settings" method="POST" class="grid md:grid-cols-2 gap-6">
-                <input name="site_name" value="{{ conf.site_name }}" class="input-field" placeholder="Site Name">
-                <input name="site_logo" value="{{ conf.site_logo }}" class="input-field" placeholder="Site Logo URL">
-                <textarea name="header_notice" class="input-field md:col-span-2">{{ conf.header_notice }}</textarea>
-                <button class="btn-red md:col-span-2">Update Configuration</button>
-            </form>
-        </div>
-    </div>
-    <script>
-        async function searchTMDB(){
-            const q = document.getElementById('tmdb_q').value;
-            const t = document.getElementById('tmdb_type').value;
-            const res = await fetch(`/api/tmdb_search?q=${q}&t=${t}`);
-            const data = await res.json();
-            const div = document.getElementById('results');
-            div.innerHTML = '';
-            data.results.forEach(m => {
-                div.innerHTML += `<div class="min-w-[120px] cursor-pointer" onclick="fill('${m.id}', '${t}')"><img src="https://image.tmdb.org/t/p/w200${m.poster_path}" class="rounded-xl border-2 border-transparent hover:border-red-600 transition"></div>`;
-            });
-        }
-        async function fill(id, type){
-            const res = await fetch(`/api/tmdb_info?id=${id}&t=${type}`);
-            const j = await res.json(); const d = j.data;
-            document.getElementById('f_cid').value = ''; // Reset ID for new add
-            document.getElementById('f_title').value = d.title || d.name;
-            document.getElementById('f_year').value = (d.release_date || d.first_air_date).split('-')[0];
-            document.getElementById('f_lang').value = d.original_language.toUpperCase();
-            document.getElementById('f_poster').value = 'https://image.tmdb.org/t/p/w500' + d.poster_path;
-            document.getElementById('f_backdrop').value = 'https://image.tmdb.org/t/p/original' + d.backdrop_path;
-            document.getElementById('f_logo').value = j.logo;
-            document.getElementById('f_story').value = d.overview;
-            document.getElementById('f_type').value = type;
-            alert("Data Loaded! Verify and Save.");
-        }
-    </script>
-</body>
-</html>
-"""
-
-ADMIN_MANAGE_HTML = """
-<!DOCTYPE html>
-<html>
-<head>{{ ui|safe }}<title>Management</title></head>
-<body class="p-10">
-    <div class="max-w-6xl mx-auto">
-        <div class="flex justify-between items-center mb-12">
-            <h2 class="text-4xl font-black italic uppercase tracking-tighter">Content Hub</h2>
-            <a href="/admin/dashboard" class="btn-red text-xs">Back</a>
-        </div>
-        <div class="space-y-6">
-            {% for m in items %}
-            <div class="glass p-6 rounded-[40px] flex items-center justify-between gap-6">
-                <div class="flex items-center gap-6">
-                    <img src="{{ m.poster }}" class="h-20 w-16 rounded-xl object-cover">
-                    <div>
-                        <h4 class="text-xl font-black italic">{{ m.title }}</h4>
-                        <span class="text-xs font-bold text-gray-500 uppercase">{{ m.type }} | {{ m.year }}</span>
-                    </div>
-                </div>
-                <div class="flex gap-4">
-                    {% if m.type == 'movie' %}
-                    <a href="/admin/links/{{ m._id }}" class="bg-blue-600 px-6 py-2 rounded-xl text-xs font-black uppercase italic">Links</a>
-                    {% else %}
-                    <a href="/admin/series/{{ m._id }}" class="bg-indigo-600 px-6 py-2 rounded-xl text-xs font-black uppercase italic">Episodes</a>
-                    {% endif %}
-                    <a href="/admin/delete/{{ m._id }}" class="bg-red-900 px-6 py-2 rounded-xl text-xs font-black uppercase" onclick="return confirm('Delete?')">Kill</a>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-</body>
-</html>
-"""
-
-ADMIN_LINKS_HTML = """
-<!DOCTYPE html>
-<html>
-<head>{{ ui|safe }}<title>Movie Links</title></head>
-<body class="p-10 bg-gray-950">
-    <div class="max-w-4xl mx-auto glass p-10 rounded-[50px]">
-        <h2 class="text-3xl font-black mb-8 italic uppercase tracking-tighter">Links: {{ m.title }}</h2>
-        <form method="POST" class="grid grid-cols-4 gap-4 mb-10">
-            <input type="hidden" name="action" value="add">
-            <input name="q" placeholder="Quality" class="input-field">
-            <input name="tg" placeholder="TG Link" class="input-field">
-            <input name="d" placeholder="Direct Link" class="input-field">
-            <button class="btn-red">Add Link</button>
-        </form>
-        <div class="space-y-3">
-            {% for l in m.movie_links %}
-            <form method="POST" class="bg-black/40 p-4 rounded-2xl flex justify-between items-center border border-white/5">
-                <input type="hidden" name="action" value="delete">
-                <input type="hidden" name="lid" value="{{ l.id }}">
-                <span class="font-black text-red-600 uppercase italic">{{ l.q }}</span>
-                <button class="text-red-900 text-xs font-black uppercase">Remove</button>
-            </form>
-            {% endfor %}
-        </div>
-        <a href="/admin/manage" class="block mt-10 text-center text-gray-500 text-xs">Back to Hub</a>
-    </div>
-</body>
-</html>
-"""
-
-ADMIN_SERIES_HTML = """
-<!DOCTYPE html>
-<html>
-<head>{{ ui|safe }}<title>Series Manager</title></head>
-<body class="p-10">
-    <div class="max-w-5xl mx-auto glass p-10 rounded-[50px]">
-        <h2 class="text-3xl font-black mb-10 italic uppercase tracking-tighter">Seasons: {{ m.title }}</h2>
-        <form method="POST" class="grid md:grid-cols-4 gap-4 mb-12 bg-white/5 p-8 rounded-3xl">
-            <input type="hidden" name="action" value="add_ep">
-            <input name="sn" placeholder="Season No" class="input-field" required>
-            <input name="en" placeholder="Episode No" class="input-field" required>
-            <input name="links" placeholder="Format: Quality|TG|Direct, Q2|TG2|D2" class="input-field col-span-1 md:col-span-2" required>
-            <button class="btn-red md:col-span-4">ADD EPISODE</button>
-        </form>
-
-        {% for s in m.seasons %}
-        <div class="mb-10">
-            <h3 class="text-xl font-black text-red-600 mb-6 italic">Season {{ s.sn }}</h3>
-            <div class="space-y-4">
-                {% for ep in s.eps %}
-                <form method="POST" class="glass p-6 rounded-3xl flex justify-between items-center border-l-4 border-indigo-600">
-                    <input type="hidden" name="action" value="del_ep">
-                    <input type="hidden" name="sn" value="{{ s.sn }}">
-                    <input type="hidden" name="eid" value="{{ ep.id }}">
-                    <div>
-                        <div class="font-black uppercase tracking-widest text-xs">Episode {{ ep.en }}</div>
-                        <div class="flex gap-2 mt-1">
-                            {% for link in ep.links %}<span class="text-[8px] bg-white/5 px-2 py-0.5 rounded text-gray-500">{{ link.q }}</span>{% endfor %}
-                        </div>
-                    </div>
-                    <button class="text-red-900 text-[10px] font-black uppercase">Delete Ep</button>
-                </form>
-                {% endfor %}
-            </div>
-        </div>
-        {% endfor %}
-        <a href="/admin/manage" class="block text-center text-gray-600 text-xs mt-10">Return to Hub</a>
-    </div>
-</body>
-</html>
-"""
-
-ADMIN_LOGIN_HTML = """
-<!DOCTYPE html>
-<html>
-<head>{{ ui|safe }}<title>Admin Gate</title></head>
-<body class="flex items-center justify-center min-h-screen">
-    <form method="POST" class="glass p-16 rounded-[60px] w-full max-w-lg shadow-2xl text-center">
-        <h2 class="text-5xl font-black text-red-600 italic tracking-tighter mb-10 uppercase">Admin Gate</h2>
-        <input name="u" placeholder="Admin Username" class="input-field text-center text-lg mb-6" required>
-        <input name="p" type="password" placeholder="Passcode" class="input-field text-center text-lg mb-8" required>
-        <button class="w-full btn-red py-5 rounded-3xl text-xl font-black uppercase tracking-widest shadow-2xl shadow-red-900/30">Unseal Access</button>
-    </form>
 </body>
 </html>
 """
