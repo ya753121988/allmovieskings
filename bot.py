@@ -60,44 +60,28 @@ UI_HEAD = """
 </style>
 """
 
-# --- AD REDIRECT JS ---
+# --- AD REDIRECT JS (Updated Download Logic) ---
 AD_JS = """
 <script>
     function handleAction(e, targetUrl) {
         const adStatus = "{{ conf.ad_status }}";
         const adLink = "{{ conf.direct_ad_link }}";
-        const timer = parseInt("{{ conf.ad_timer }}");
         
+        // যদি অ্যাড অন থাকে এবং টার্গেট লিঙ্ক থাকে
         if (adStatus === "on" && adLink && targetUrl !== "#") {
             e.preventDefault();
-            const overlay = document.getElementById('ad-timer-overlay');
-            overlay.style.display = 'flex';
+            
+            // ১. নতুন ট্যাবে অ্যাড ওপেন করবে
             window.open(adLink, '_blank');
-
-            let count = timer;
-            const btn = document.getElementById('timer-btn');
-            btn.className = "btn-red px-10 py-4 opacity-60 cursor-not-allowed";
-            const interval = setInterval(() => {
-                btn.innerText = "Checking Security: " + count + "s";
-                count--;
-                if (count < 0) {
-                    clearInterval(interval);
-                    btn.innerText = "Click to Continue";
-                    btn.className = "btn-red bg-green-600 px-10 py-4";
-                    btn.onclick = () => { window.location.href = targetUrl; };
-                }
-            }, 1000);
+            
+            // ২. মেইন ট্যাবে অটোমেটিক ডাউনলোড লিঙ্ক ট্রিগার করবে
+            window.location.href = targetUrl;
+            
         } else {
             window.location.href = targetUrl;
         }
     }
 </script>
-<div id="ad-timer-overlay">
-    <div class="text-center p-10 glass rounded-[40px] border border-red-600/20">
-        <h2 class="text-2xl font-black mb-4 text-red-600 uppercase italic">Verifying Request...</h2>
-        <button id="timer-btn" class="btn-red px-10 py-4">Please Wait...</button>
-    </div>
-</div>
 """
 
 # -----------------------------------------------------------
@@ -405,6 +389,11 @@ ADMIN_MANAGE_HTML = """
     </div>
     """ + SIDEBAR_HTML + """
     <div class="flex-1 p-4 md:p-10">
+        <!-- BACK BUTTON -->
+        <a href="/admin/dashboard" class="btn-red bg-gray-700 hover:bg-gray-800 mb-6 px-4 py-2 text-xs uppercase font-bold italic tracking-tighter">
+            <i class="fa fa-arrow-left mr-2"></i> Back to Dashboard
+        </a>
+
         <form class="mb-8 flex gap-4"><input name="q" value="{{ q }}" placeholder="Search..." class="input-field"><button class="btn-red">Search</button></form>
         <form action="/admin/bulk_delete" method="POST">
             <button type="submit" class="bg-red-900 px-6 py-2 rounded-xl mb-4 text-xs font-bold uppercase" onclick="return confirm('Kill selected?')">Bulk Kill</button>
@@ -437,6 +426,11 @@ ADMIN_CAT_HTML = """
 <body class="flex flex-col lg:flex-row min-h-screen">
     """ + SIDEBAR_HTML + """
     <div class="flex-1 p-10 max-w-4xl">
+        <!-- BACK BUTTON -->
+        <a href="/admin/dashboard" class="btn-red bg-gray-700 hover:bg-gray-800 mb-6 px-4 py-2 text-xs uppercase font-bold italic tracking-tighter">
+            <i class="fa fa-arrow-left mr-2"></i> Back to Dashboard
+        </a>
+
         <h2 class="text-2xl font-black italic mb-10 uppercase">Category Hub</h2>
         <form method="POST" class="flex gap-4 mb-10"><input name="name" placeholder="Category Name" class="input-field" required><button class="btn-red">Add</button></form>
         <div class="grid grid-cols-2 gap-4">
@@ -459,6 +453,11 @@ ADMIN_SETTINGS_HTML = """
 <body class="flex flex-col lg:flex-row min-h-screen">
     """ + SIDEBAR_HTML + """
     <div class="flex-1 p-6 md:p-12 max-w-5xl">
+        <!-- BACK BUTTON -->
+        <a href="/admin/dashboard" class="btn-red bg-gray-700 hover:bg-gray-800 mb-6 px-4 py-2 text-xs uppercase font-bold italic tracking-tighter">
+            <i class="fa fa-arrow-left mr-2"></i> Back to Dashboard
+        </a>
+
         <h2 class="text-2xl font-black italic mb-10 uppercase">Site & Ads Hub</h2>
         <form method="POST" class="glass p-8 rounded-[40px] space-y-6">
             <div class="grid md:grid-cols-2 gap-6">
@@ -500,6 +499,11 @@ ADMIN_LINKS_HTML = """
 <head>{{ ui|safe }}<title>Links</title></head>
 <body class="p-6 md:p-10">
     <div class="max-w-4xl mx-auto glass p-10 rounded-[50px]">
+        <!-- BACK BUTTON -->
+        <a href="/admin/dashboard" class="btn-red bg-gray-700 hover:bg-gray-800 mb-6 px-4 py-2 text-xs uppercase font-bold italic tracking-tighter">
+            <i class="fa fa-arrow-left mr-2"></i> Back to Dashboard
+        </a>
+
         <h2 class="text-2xl font-black mb-8 italic uppercase tracking-tighter">{{ m.title }} : Links</h2>
         <form method="POST" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-10">
             <input type="hidden" name="action" value="add">
@@ -526,6 +530,11 @@ ADMIN_SERIES_HTML = """
 <head>{{ ui|safe }}<title>Series Manager</title></head>
 <body class="p-10">
     <div class="max-w-5xl mx-auto glass p-10 rounded-[50px]">
+        <!-- BACK BUTTON -->
+        <a href="/admin/dashboard" class="btn-red bg-gray-700 hover:bg-gray-800 mb-6 px-4 py-2 text-xs uppercase font-bold italic tracking-tighter">
+            <i class="fa fa-arrow-left mr-2"></i> Back to Dashboard
+        </a>
+
         <h2 class="text-2xl font-black mb-8 italic uppercase tracking-tighter">{{ m.title }}</h2>
         <form method="POST" class="grid grid-cols-2 gap-4 mb-8">
             <input type="hidden" name="action" value="add_ep">
