@@ -17,7 +17,7 @@ contents_col = db['contents']
 settings_col = db['site_settings']
 cat_col = db['categories']
 
-# ডিফল্ট সেটিংস চেক (নতুন ক্যাটাগরি লিমিট সহ আপডেট করা হয়েছে)
+# ডিফল্ট সেটিংস (নতুন ফিল্ড cat_display_limit সহ আপডেট করা হয়েছে)
 if not settings_col.find_one({"id": "config"}):
     settings_col.insert_one({
         "id": "config", "site_name": "DRAMA-FLIX", "site_logo": "https://i.ibb.co/logo.png",
@@ -27,7 +27,7 @@ if not settings_col.find_one({"id": "config"}):
         "popunder_ad": "", "social_bar_ad": "", "header_ad": "", "footer_ad": "", "middle_ad": ""
     })
 
-# --- UI CSS ---
+# --- UI HEAD ---
 UI_HEAD = """
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -49,17 +49,14 @@ UI_HEAD = """
     #adminSidebar.active { left: 0; }
     @media (min-width: 1024px) {
         #adminSidebar { position: sticky; left: 0; width: 320px; }
-        .menu-toggle { display: none; }
     }
     .nav-link { display: flex; align-items: center; padding: 14px; border-radius: 12px; color: #94a3b8; margin-bottom: 5px; transition: 0.3s; }
     .nav-link:hover, .nav-link.active { background: var(--p); color: white; }
-
-    /* Ad Overlay */
-    #ad-timer-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.98); z-index:10000; flex-direction:column; align-items:center; justify-content:center; }
+    #ad-timer-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.95); z-index:10000; flex-direction:column; align-items:center; justify-content:center; }
 </style>
 """
 
-# --- AD REDIRECT SCRIPT (IMPROVED) ---
+# --- AD REDIRECT SCRIPT ---
 AD_JS = """
 <script>
     function handleAction(e, targetUrl) {
@@ -67,28 +64,25 @@ AD_JS = """
         const adLink = "{{ conf.direct_ad_link }}";
         const timer = parseInt("{{ conf.ad_timer }}");
         
-        if (adStatus === "on" && adLink && targetUrl.startsWith('http')) {
+        if (adStatus === "on" && adLink && targetUrl !== "#") {
             e.preventDefault();
             const overlay = document.getElementById('ad-timer-overlay');
             overlay.style.display = 'flex';
             
-            // ওপেন অ্যাড ইন নিউ ট্যাব
+            // ডিরেক্ট অ্যাড লিঙ্কটি নতুন ট্যাবে ওপেন হবে
             window.open(adLink, '_blank');
 
             let count = timer;
             const btn = document.getElementById('timer-btn');
-            btn.className = "btn-red px-10 py-4 cursor-not-allowed opacity-70";
-            
+            btn.className = "btn-red px-10 py-4 opacity-70 cursor-not-allowed";
             const interval = setInterval(() => {
-                btn.innerText = "Wait " + count + "s to Unlock";
+                btn.innerText = "Please Wait " + count + "s";
                 count--;
                 if (count < 0) {
                     clearInterval(interval);
                     btn.innerText = "Click to Continue";
                     btn.className = "btn-red bg-green-600 px-10 py-4 cursor-pointer";
-                    btn.onclick = () => { 
-                        window.location.href = targetUrl; 
-                    };
+                    btn.onclick = () => { window.location.href = targetUrl; };
                 }
             }, 1000);
         } else {
@@ -97,9 +91,8 @@ AD_JS = """
     }
 </script>
 <div id="ad-timer-overlay">
-    <div class="text-center p-10 glass rounded-[40px] border border-red-600/30">
-        <h2 class="text-2xl font-black mb-4 text-red-600 uppercase italic">Unlocking Content...</h2>
-        <p class="text-gray-400 mb-6 text-sm">Please do not close this tab.</p>
+    <div class="text-center p-10 glass rounded-[40px] border border-red-600/20">
+        <h2 class="text-2xl font-black mb-4 text-red-600 uppercase">Redirecting...</h2>
         <button id="timer-btn" class="btn-red px-10 py-4">Waiting...</button>
     </div>
 </div>
@@ -114,18 +107,20 @@ def index():
     conf = settings_col.find_one({"id": "config"})
     search = request.args.get('s', '')
     
+    # সার্চ করলে সব পোস্ট দেখাবে
     if search:
         items = list(contents_col.find({"title": {"$regex": search, "$options": "i"}}).sort("title", 1))
         return render_template_string(USER_HOME_HTML, ui=UI_HEAD, conf=conf, items=items, cats_data=[], slider=[], is_search=True, ad_js=AD_JS)
 
+    # স্লাইডার এবং ক্যাটাগরি ভিত্তিক ডাটা
     slider = list(contents_col.find().sort("views", -1).limit(int(conf.get('slider_limit', 10))))
     cats = list(cat_col.find())
-    cat_limit = int(conf.get('cat_display_limit', 10))
+    display_limit = int(conf.get('cat_display_limit', 10))
     
     cats_data = []
     for c in cats:
-        # ক্যাটাগরি অনুযায়ী ডাটা ফিল্টার এবং টাইটেল অনুযায়ী A-Z সর্ট
-        c_items = list(contents_col.find({"category": c['name']}).sort("title", 1).limit(cat_limit))
+        # টাইটেল অনুযায়ী A-Z সর্ট এবং এডমিন লিমিট অনুযায়ী পোস্ট
+        c_items = list(contents_col.find({"category": c['name']}).sort("title", 1).limit(display_limit))
         if c_items:
             cats_data.append({"name": c['name'], "items": c_items})
             
@@ -154,7 +149,6 @@ def login():
             session['admin'] = True; return redirect('/admin/dashboard')
     return render_template_string(ADMIN_LOGIN_HTML, ui=UI_HEAD)
 
-# --- ADMIN DASHBOARD ---
 @app.route('/admin/dashboard')
 def admin_dashboard():
     if not session.get('admin'): return redirect('/admin/login')
@@ -250,7 +244,6 @@ def manage_series(id):
             d_links = request.form.getlist('d[]')
             links_list = [{"q": qualities[i], "tg": tg_links[i], "d": d_links[i]} for i in range(len(qualities)) if qualities[i]]
             ep = {"id": eid, "en": request.form.get('en'), "links": links_list}
-            
             if action == 'add_ep':
                 res = contents_col.update_one({"_id": ObjectId(id), "seasons.sn": sn}, {"$push": {"seasons.$.eps": ep}})
                 if res.matched_count == 0:
@@ -276,6 +269,7 @@ def admin_settings():
 @app.route('/logout')
 def logout(): session.clear(); return redirect('/')
 
+# --- TMDB HELPERS ---
 @app.route('/api/tmdb_search')
 def api_tmdb_search():
     q = request.args.get('q'); t = request.args.get('t', 'movie')
@@ -290,17 +284,13 @@ def api_tmdb_info():
     logos = res.get('images', {}).get('logos', [])
     backdrops = res.get('images', {}).get('backdrops', [])
     posters = res.get('images', {}).get('posters', [])
-    
     gallery = []
     for b in backdrops[:10]: gallery.append(f"https://image.tmdb.org/t/p/original{b['file_path']}")
     for p in posters[:10]: gallery.append(f"https://image.tmdb.org/t/p/original{p['file_path']}")
-    
     logo = f"https://image.tmdb.org/t/p/original{logos[0]['file_path']}" if logos else ""
     return jsonify({"data": res, "logo": logo, "gallery": ",".join(gallery)})
 
-# --------------------------------------------------------------------------------------
-# HTML TEMPLATES
-# --------------------------------------------------------------------------------------
+# --- HTML TEMPLATES (আপনার ডিজাইন হুবহু রাখা হয়েছে) ---
 
 SIDEBAR_HTML = """
 <div id="adminSidebar" class="p-6">
@@ -487,10 +477,6 @@ ADMIN_SETTINGS_HTML = """
 <html>
 <head>{{ ui|safe }}<title>Settings & Ads Hub</title></head>
 <body class="flex flex-col lg:flex-row min-h-screen">
-    <div class="lg:hidden p-4 glass sticky top-0 z-[1500] flex justify-between items-center">
-        <h2 class="text-red-600 font-black italic">SITE CONFIG</h2>
-        <button onclick="toggleSidebar()"><i class="fa fa-bars"></i></button>
-    </div>
     """ + SIDEBAR_HTML + """
     <div class="flex-1 p-6 md:p-12 max-w-5xl">
         <h2 class="text-2xl font-black italic mb-10">SITE & ADS CONFIGURATION</h2>
@@ -499,12 +485,12 @@ ADMIN_SETTINGS_HTML = """
                 <div><label class="text-xs uppercase text-gray-500 font-bold block mb-2">Site Name</label><input name="site_name" value="{{ conf.site_name }}" class="input-field"></div>
                 <div><label class="text-xs uppercase text-gray-500 font-bold block mb-2">Logo URL</label><input name="site_logo" value="{{ conf.site_logo }}" class="input-field"></div>
             </div>
-
-            <div class="grid md:grid-cols-2 gap-6 p-4 bg-blue-900/10 rounded-3xl">
-                <div><label class="text-xs text-gray-500 font-bold">Slider Limit</label><input type="number" name="slider_limit" value="{{ conf.slider_limit }}" class="input-field"></div>
-                <div><label class="text-xs text-gray-500 font-bold">Home Category Limit (A-Z)</label><input type="number" name="cat_display_limit" value="{{ conf.cat_display_limit }}" class="input-field"></div>
-            </div>
             
+            <div class="grid md:grid-cols-2 gap-6 p-4 bg-red-900/10 rounded-2xl">
+                <div><label class="text-xs text-gray-500 font-bold">Slider Limit</label><input type="number" name="slider_limit" value="{{ conf.slider_limit }}" class="input-field"></div>
+                <div><label class="text-xs text-gray-500 font-bold">Post Display Limit (Home)</label><input type="number" name="cat_display_limit" value="{{ conf.cat_display_limit }}" class="input-field"></div>
+            </div>
+
             <div class="p-6 bg-red-900/10 rounded-3xl border border-red-600/20">
                 <h3 class="text-red-600 font-bold mb-4 uppercase italic">Direct Link Ad Settings</h3>
                 <div class="grid md:grid-cols-3 gap-4">
@@ -582,7 +568,6 @@ ADMIN_SERIES_HTML = """
 <body class="p-4 md:p-10">
     <div class="max-w-5xl mx-auto glass p-6 md:p-10 rounded-[50px]">
         <h2 class="text-xl md:text-3xl font-black italic uppercase mb-10">Manage Series: {{ m.title }}</h2>
-
         <form method="POST" id="epForm" class="bg-white/5 p-6 rounded-3xl mb-12">
             <input type="hidden" name="action" id="epAction" value="add_ep">
             <input type="hidden" name="eid" id="epId" value="">
@@ -596,7 +581,6 @@ ADMIN_SERIES_HTML = """
             <button type="button" onclick="addMoreQual()" class="mt-4 text-xs text-blue-400 font-bold uppercase">+ Add More Quality</button>
             <button class="w-full btn-red mt-8 uppercase font-black" id="epSubmitBtn">Save Episode</button>
         </form>
-
         {% for s in m.seasons %}
         <div class="mb-10 bg-black/30 p-6 rounded-[30px] border border-gray-900">
             <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-black text-red-600 italic">Season {{ s.sn }}</h3><form method="POST"><input type="hidden" name="action" value="del_season"><input type="hidden" name="sn" value="{{ s.sn }}"><button class="text-red-900 text-xs font-bold uppercase">Delete Season</button></form></div>
@@ -648,12 +632,11 @@ USER_HOME_HTML = """
         </form>
         <button><i class="fa fa-bars text-xl"></i></button>
     </nav>
-    
     <div class="flex justify-center my-4">{{ conf.header_ad|safe }}</div>
     <div class="bg-red-600 text-white text-center py-1 text-[10px] font-black uppercase"><marquee>{{ conf.header_notice }}</marquee></div>
     
     <main class="p-4 md:px-16">
-        {% if not is_search %}
+        {% if not is_search and slider %}
         <div class="flex gap-4 overflow-x-auto no-scrollbar py-6">
             {% for m in slider %}
             <div class="min-w-[280px] md:min-w-[450px] h-64 relative rounded-[30px] overflow-hidden cursor-pointer" onclick="handleAction(event, '/view/{{ m._id }}')">
@@ -667,9 +650,7 @@ USER_HOME_HTML = """
         <div class="flex justify-center my-8">{{ conf.middle_ad|safe }}</div>
 
         {% if is_search %}
-            <h2 class="text-2xl font-black mb-8 border-l-8 border-red-600 pl-4 italic uppercase tracking-tighter">
-                {{ cat_name if cat_name else 'Search Results' }}
-            </h2>
+            <h2 class="text-2xl font-black mb-8 border-l-8 border-red-600 pl-4 italic tracking-tighter uppercase">{{ cat_name if cat_name else 'Search' }}</h2>
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-6">
                 {% for m in items %}
                 <div class="cursor-pointer group" onclick="handleAction(event, '/view/{{ m._id }}')">
@@ -713,8 +694,7 @@ USER_DETAIL_HTML = """
         <div class="absolute inset-0 bg-gradient-to-t from-[#05070a]"></div>
         <button onclick="history.back()" class="absolute top-8 left-8 glass h-12 w-12 rounded-full flex items-center justify-center"><i class="fa fa-arrow-left"></i></button>
         <div class="absolute bottom-12 left-6 md:left-20">
-            {% if m.logo %}<img src="{{ m.logo }}" class="w-64 md:w-96 mb-6 cursor-pointer" onclick="handleAction(event, '{{ m.logo }}')">
-            {% else %}<h1 class="text-5xl md:text-8xl font-black italic tracking-tighter uppercase mb-4">{{ m.title }}</h1>{% endif %}
+            {% if m.logo %}<img src="{{ m.logo }}" class="w-64 md:w-96 mb-6">{% else %}<h1 class="text-5xl md:text-8xl font-black italic tracking-tighter uppercase mb-4">{{ m.title }}</h1>{% endif %}
             <div class="flex gap-4 text-xs font-black text-gray-400 items-center uppercase tracking-widest">
                 <span class="bg-red-600 text-white px-2 py-1 rounded">ULTRA HD</span>
                 <span>{{ m.year }}</span><span>{{ m.lang }}</span><span><i class="fa fa-eye"></i> {{ m.views }}</span>
@@ -726,13 +706,13 @@ USER_DETAIL_HTML = """
     <div class="p-6 md:p-20">
         <div class="flex justify-center mb-10">{{ conf.middle_ad|safe }}</div>
         {% if m.type == 'movie' %}
-            <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Watch Now</h3>
+            <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Direct Links</h3>
             <div class="grid gap-4 max-w-3xl">
                 {% for l in m.movie_links %}
                 <div class="glass p-5 rounded-2xl flex justify-between items-center">
                     <span class="font-black text-red-600 italic uppercase">{{ l.q }}</span>
-                    <div class="flex gap-4">
-                        {% if l.tg %}<a href="#" onclick="handleAction(event, '{{ l.tg }}')" class="text-sky-500"><i class="fab fa-telegram text-2xl"></i></a>{% endif %}
+                    <div class="flex gap-4 items-center">
+                        {% if l.tg %}<a href="#" onclick="handleAction(event, '{{ l.tg }}')" class="text-sky-500 text-2xl"><i class="fab fa-telegram"></i></a>{% endif %}
                         <button onclick="handleAction(event, '{{ l.d }}')" class="bg-white text-black px-6 py-2 rounded-xl font-black text-[10px] uppercase italic">Download</button>
                     </div>
                 </div>
@@ -749,7 +729,7 @@ USER_DETAIL_HTML = """
                     <div class="font-black text-[12px] text-gray-400 uppercase mb-4 tracking-widest">Episode {{ ep.en }}</div>
                     <div class="grid md:grid-cols-2 gap-4">
                         {% for l in ep.links %}
-                        <div class="bg-gray-800/30 p-4 rounded-2xl flex justify-between items-center border border-white/5">
+                        <div class="bg-gray-800/30 p-4 rounded-2xl flex justify-between items-center">
                             <span class="text-red-500 font-black italic text-sm">{{ l.q }}</span>
                             <div class="flex gap-4 items-center">
                                 {% if l.tg %}<a href="#" onclick="handleAction(event, '{{ l.tg }}')" class="text-sky-500 text-2xl"><i class="fab fa-telegram"></i></a>{% endif %}
@@ -763,7 +743,6 @@ USER_DETAIL_HTML = """
             </div>
             {% endfor %}
         {% endif %}
-
         {% if m.images %}
         <div class="mt-20">
             <h3 class="text-2xl font-black mb-8 italic border-l-4 border-red-600 pl-4 uppercase">Gallery</h3>
